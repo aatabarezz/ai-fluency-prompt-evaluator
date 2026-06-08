@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MicroGPT</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
+    --accent: #6366f1; --accent2: #818cf8;
+    --text: #e2e8f0; --muted: #64748b;
+    --green: #22c55e; --red: #ef4444;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; }
+  header { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.5px; }
+  header .badge { background: var(--accent); color: white; padding: 2px 8px; border-radius: 99px; font-size: 10px; }
+  nav { display: flex; border-bottom: 1px solid var(--border); }
+  nav button { flex: 1; padding: 12px; background: none; border: none; color: var(--muted); cursor: pointer; font-family: inherit; font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 2px solid transparent; transition: all 0.15s; }
+  nav button.active { color: var(--accent2); border-bottom-color: var(--accent); }
+  nav button:hover:not(.active) { color: var(--text); }
+  .tab { display: none; padding: 24px; }
+  .tab.active { display: block; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 14px; }
+  input, textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font-family: inherit; font-size: 13px; outline: none; transition: border-color 0.15s; }
+  input:focus, textarea:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 80px; }
+  button.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0.3px; transition: all 0.15s; }
+  button.btn-primary { background: var(--accent); color: white; }
+  button.btn-primary:hover { background: var(--accent2); }
+  button.btn-danger { background: #3f1818; color: var(--red); border: 1px solid #5f2020; }
+  button.btn-danger:hover { background: #5f2020; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .stat { text-align: center; padding: 8px 0; }
+  .stat .val { font-size: 24px; font-weight: 700; color: var(--accent2); }
+  .stat .lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+  .tag-idle { background: #1e2433; color: var(--muted); }
+  .tag-active { background: #1e1e3a; color: var(--accent2); }
+  .tag-done { background: #0f2a1a; color: var(--green); }
+  .samples-log { max-height: 300px; overflow-y: auto; }
+  .sample-entry { border-left: 2px solid var(--border); padding: 8px 12px; margin-bottom: 8px; }
+  .sample-entry .step-label { font-size: 10px; color: var(--muted); margin-bottom: 4px; }
+  .sample-entry .names { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sample-entry .name { background: var(--bg); border: 1px solid var(--border); padding: 2px 8px; border-radius: 4px; }
+  .name-card { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 16px; text-align: center; font-size: 15px; font-weight: 600; }
+  .names-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
+  input[type=range] { -webkit-appearance: none; height: 4px; border-radius: 2px; background: var(--border); outline: none; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); cursor: pointer; }
+  .flex-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .log { font-size: 11px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>μGPT</h1>
+  <span class="badge">microgpt</span>
+  <span id="status-badge" class="tag tag-idle" style="margin-left:auto">idle</span>
+</header>
+
+<nav>
+  <button class="active" onclick="switchTab('load')">① Load</button>
+  <button onclick="switchTab('train')">② Train</button>
+  <button onclick="switchTab('report')">③ Report</button>
+  <button onclick="switchTab('infer')">④ Infer</button>
+</nav>
+
+<div id="tab-load" class="tab active"></div>
+<div id="tab-train" class="tab"></div>
+<div id="tab-report" class="tab"></div>
+<div id="tab-infer" class="tab"></div>
+
+<script>
+// ── Tab routing ────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  const idx = ['load','train','report','infer'].indexOf(name);
+  document.querySelectorAll('nav button')[idx].classList.add('active');
+}
+
+// ── Load tab ──────────────────────────────────────────────────────────────────
+document.getElementById('tab-load').innerHTML = `
+<div class="card">
+  <h2>Dataset Source</h2>
+  <label style="color:var(--muted);font-size:11px">URL</label>
+  <input id="ds-url" type="text" value="https://raw.githubusercontent.com/karpathy/makemore/refs/heads/master/names.txt" style="margin-top:6px;margin-bottom:12px">
+  <label style="color:var(--muted);font-size:11px">— or paste text (one document per line) —</label>
+  <textarea id="ds-text" placeholder="emma&#10;olivia&#10;ava&#10;..." style="margin-top:6px;margin-bottom:12px"></textarea>
+  <button class="btn btn-primary" onclick="loadData()">Load Dataset</button>
+  <div class="log" id="load-log"></div>
+</div>
+<div class="card" id="ds-preview" style="display:none">
+  <h2>Preview</h2>
+  <div class="grid3" id="ds-stats"></div>
+  <div style="margin-top:16px;color:var(--muted);font-size:11px">Sample docs:</div>
+  <div id="ds-sample" style="margin-top:8px"></div>
+</div>
+<div class="card">
+  <h2>Training Config</h2>
+  <div class="grid2">
+    <div>
+      <label style="color:var(--muted);font-size:11px">Steps</label>
+      <input id="cfg-steps" type="number" value="1000" min="10" max="10000" style="margin-top:4px">
+    </div>
+    <div>
+      <label style="color:var(--muted);font-size:11px">Inference Temperature</label>
+      <input id="cfg-temp" type="number" value="0.5" min="0.1" max="1.0" step="0.05" style="margin-top:4px">
+    </div>
+  </div>
+</div>`;
+
+async function loadData() {
+  const url = document.getElementById('ds-url').value.trim();
+  const text = document.getElementById('ds-text').value.trim();
+  const log = document.getElementById('load-log');
+  log.textContent = 'Loading…';
+  try {
+    const res = await fetch('/load', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(text ? {text} : {url})
+    });
+    const data = await res.json();
+    log.textContent = '';
+    document.getElementById('ds-preview').style.display = 'block';
+    document.getElementById('ds-stats').innerHTML = `
+      <div class="stat"><div class="val">${data.num_docs.toLocaleString()}</div><div class="lbl">Documents</div></div>
+      <div class="stat"><div class="val">${data.vocab_size}</div><div class="lbl">Vocab Size</div></div>
+      <div class="stat"><div class="val">ready</div><div class="lbl">Status</div></div>`;
+    document.getElementById('ds-sample').innerHTML =
+      data.sample.map(s => `<span class="tag tag-idle" style="margin:2px">${s}</span>`).join('');
+  } catch(e) {
+    log.textContent = 'Error: ' + e.message;
+  }
+}
+
+// ── Pipeline graph ─────────────────────────────────────────────────────────────
+const PIPELINE_NODES = [
+  {id:'dataset',   label:'Dataset'},
+  {id:'tokenizer', label:'Tokenizer'},
+  {id:'forward',   label:'GPT Forward'},
+  {id:'loss',      label:'Loss'},
+  {id:'backward',  label:'Backward'},
+  {id:'adam',      label:'Adam'},
+];
+
+const GPT_NODES = [
+  {id:'embed',     label:'Embed'},
+  {id:'rmsnorm',   label:'RMSNorm'},
+  {id:'attention', label:'Attention'},
+  {id:'mlp',       label:'MLP'},
+  {id:'lmhead',    label:'LM Head'},
+];
+
+function renderPipeline(svgEl, nodes, stageStateMap) {
+  // preserve defs
+  const existingDefs = svgEl.querySelector('defs');
+  svgEl.innerHTML = '';
+  if (existingDefs) svgEl.appendChild(existingDefs);
+
+  const W = 760, H = 80;
+  const nw = 90, nh = 36;
+  const gap = (W - nodes.length * nw) / (nodes.length + 1);
+
+  nodes.forEach((node, i) => {
+    const x = gap + i * (nw + gap);
+    const y = (H - nh) / 2;
+    const s = stageStateMap[node.id] || 'idle';
+    const fill   = s === 'active' ? '#1e1e3a' : s === 'done' ? '#0f2a1a' : '#1a1d27';
+    const stroke = s === 'active' ? '#6366f1' : s === 'done' ? '#22c55e' : '#2a2d3a';
+    const color  = s === 'active' ? '#818cf8' : s === 'done' ? '#22c55e' : '#64748b';
+
+    if (i > 0) {
+      const prevX = gap + (i - 1) * (nw + gap) + nw;
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', prevX); line.setAttribute('y1', H / 2);
+      line.setAttribute('x2', x);     line.setAttribute('y2', H / 2);
+      line.setAttribute('stroke', '#2a2d3a'); line.setAttribute('stroke-width', '2');
+      svgEl.appendChild(line);
+    }
+
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', x); rect.setAttribute('y', y);
+    rect.setAttribute('width', nw); rect.setAttribute('height', nh);
+    rect.setAttribute('rx', 6); rect.setAttribute('fill', fill);
+    rect.setAttribute('stroke', stroke); rect.setAttribute('stroke-width', '1.5');
+    if (s === 'active') rect.setAttribute('filter', 'url(#glow)');
+    svgEl.appendChild(rect);
+
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', x + nw / 2); text.setAttribute('y', y + nh / 2 + 5);
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('fill', color); text.setAttribute('font-size', '11');
+    text.setAttribute('font-family', 'monospace');
+    text.textContent = node.label;
+    svgEl.appendChild(text);
+  });
+}
+
+function stageMapFromActive(activeStage, nodes) {
+  const map = {};
+  let passed = false;
+  for (const n of nodes) {
+    if (n.id === activeStage) { map[n.id] = 'active'; passed = true; }
+    else map[n.id] = passed ? 'idle' : 'done';
+  }
+  return map;
+}
+
+// ── Train tab ─────────────────────────────────────────────────────────────────
+document.getElementById('tab-train').innerHTML = `
+<div class="card">
+  <h2>Pipeline</h2>
+  <svg id="pipeline-svg" viewBox="0 0 760 80" style="width:100%;overflow:visible" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <filter id="glow">
+        <feGaussianBlur stdDeviation="3" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+  </svg>
+</div>
+<div class="card" id="gpt-subgraph-card" style="display:none">
+  <h2>GPT Forward Pass</h2>
+  <svg id="gpt-svg" viewBox="0 0 760 80" style="width:100%;overflow:visible" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <filter id="glow2">
+        <feGaussianBlur stdDeviation="3" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+  </svg>
+</div>
+<div class="card flex-row">
+  <button class="btn btn-primary" id="btn-start" onclick="startTraining()">▶ Start Training</button>
+  <button class="btn btn-danger" id="btn-stop" onclick="stopTraining()" style="display:none">■ Stop</button>
+  <span id="train-status" style="color:var(--muted);font-size:11px"></span>
+</div>`;
+
+// initial idle render (after DOM is ready)
+setTimeout(() => {
+  const svg = document.getElementById('pipeline-svg');
+  if (svg) renderPipeline(svg, PIPELINE_NODES, {});
+}, 50);
+
+async function startTraining() {
+  const steps = parseInt(document.getElementById('cfg-steps')?.value || '1000');
+  const res = await fetch('/train', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({num_steps: steps})
+  });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  _numSteps = steps;
+  document.getElementById('btn-start').style.display = 'none';
+  document.getElementById('btn-stop').style.display = 'inline-flex';
+  document.getElementById('train-status').textContent = `${data.num_params.toLocaleString()} params`;
+  startSSE();
+}
+
+async function stopTraining() {
+  await fetch('/stop', {method: 'POST'});
+}
+
+// ── Report tab ────────────────────────────────────────────────────────────────
+document.getElementById('tab-report').innerHTML = `
+<div class="grid2" style="margin-bottom:16px">
+  <div class="card">
+    <h2>Training Stats</h2>
+    <div class="grid3">
+      <div class="stat"><div class="val" id="s-step">—</div><div class="lbl">Step</div></div>
+      <div class="stat"><div class="val" id="s-loss">—</div><div class="lbl">Loss</div></div>
+      <div class="stat"><div class="val" id="s-best">—</div><div class="lbl">Best</div></div>
+      <div class="stat"><div class="val" id="s-params">—</div><div class="lbl">Params</div></div>
+      <div class="stat"><div class="val" id="s-vocab">—</div><div class="lbl">Vocab</div></div>
+      <div class="stat"><div class="val" id="s-eta">—</div><div class="lbl">ETA (s)</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Loss Curve</h2>
+    <canvas id="loss-chart" height="140"></canvas>
+  </div>
+</div>
+<div class="card">
+  <h2>Mid-Training Samples</h2>
+  <div class="samples-log" id="samples-log">
+    <div style="color:var(--muted)">Samples appear every 100 steps…</div>
+  </div>
+</div>`;
+
+let lossChart = null;
+
+function initChart() {
+  const canvas = document.getElementById('loss-chart');
+  if (!canvas) return;
+  lossChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: 'loss',
+        data: [],
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99,102,241,0.08)',
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.3
+      }]
+    },
+    options: {
+      animation: false,
+      plugins: {legend: {display: false}},
+      scales: {
+        x: {ticks: {color: '#64748b', maxTicksLimit: 8, font: {size: 10}}, grid: {color: '#1e2433'}},
+        y: {ticks: {color: '#64748b', font: {size: 10}}, grid: {color: '#1e2433'}}
+      }
+    }
+  });
+}
+setTimeout(initChart, 100);
+
+// ── Infer tab ─────────────────────────────────────────────────────────────────
+document.getElementById('tab-infer').innerHTML = `
+<div class="card">
+  <h2>Generate Names</h2>
+  <div class="flex-row" style="margin-bottom:16px">
+    <div style="flex:1;min-width:200px">
+      <label style="color:var(--muted);font-size:11px">Temperature: <span id="temp-val">0.5</span></label>
+      <input type="range" id="infer-temp" min="0.1" max="1.0" step="0.05" value="0.5"
+        oninput="document.getElementById('temp-val').textContent=parseFloat(this.value).toFixed(2)"
+        style="width:100%;margin-top:6px">
+    </div>
+    <div style="flex:1;min-width:200px">
+      <label style="color:var(--muted);font-size:11px">Count: <span id="count-val">10</span></label>
+      <input type="range" id="infer-count" min="1" max="20" step="1" value="10"
+        oninput="document.getElementById('count-val').textContent=this.value"
+        style="width:100%;margin-top:6px">
+    </div>
+  </div>
+  <button class="btn btn-primary" onclick="generate()">✦ Generate</button>
+</div>
+<div class="card" id="infer-output" style="display:none">
+  <h2>Output</h2>
+  <div class="names-grid" id="names-grid"></div>
+</div>`;
+
+async function generate() {
+  const temperature = parseFloat(document.getElementById('infer-temp').value);
+  const n = parseInt(document.getElementById('infer-count').value);
+  const res = await fetch('/infer', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({temperature, n})
+  });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  document.getElementById('infer-output').style.display = 'block';
+  document.getElementById('names-grid').innerHTML =
+    data.samples.map(s => `<div class="name-card">${s}</div>`).join('');
+}
+
+// ── SSE listener ──────────────────────────────────────────────────────────────
+let sse = null;
+let _numSteps = 1000;
+
+function startSSE() {
+  if (sse) sse.close();
+  sse = new EventSource('/stream');
+  sse.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    updateStatusBadge(msg.stage);
+
+    if (msg.type === 'step') {
+      // pipeline graph
+      const pSvg = document.getElementById('pipeline-svg');
+      if (pSvg) renderPipeline(pSvg, PIPELINE_NODES, stageMapFromActive(msg.stage, PIPELINE_NODES));
+
+      // GPT subgraph
+      const subCard = document.getElementById('gpt-subgraph-card');
+      if (subCard) {
+        if (msg.stage === 'forward') {
+          subCard.style.display = 'block';
+          const gSvg = document.getElementById('gpt-svg');
+          if (gSvg) renderPipeline(gSvg, GPT_NODES, {attention: 'active'});
+        }
+      }
+
+      // stats
+      const el = id => document.getElementById(id);
+      if (el('s-step')) el('s-step').textContent = `${msg.step}/${_numSteps}`;
+      if (el('s-loss')) el('s-loss').textContent = msg.loss;
+      if (el('s-best')) el('s-best').textContent = msg.best_loss;
+      if (el('s-eta'))  el('s-eta').textContent  = msg.eta;
+
+      // chart (update every 5 steps to avoid thrashing)
+      if (lossChart && msg.step % 5 === 0) {
+        lossChart.data.labels.push(msg.step);
+        lossChart.data.datasets[0].data.push(msg.loss);
+        if (lossChart.data.labels.length > 300) {
+          lossChart.data.labels.shift();
+          lossChart.data.datasets[0].data.shift();
+        }
+        lossChart.update('none');
+      }
+
+      // mid-training samples
+      if (msg.samples) {
+        const log = document.getElementById('samples-log');
+        if (log) {
+          const entry = document.createElement('div');
+          entry.className = 'sample-entry';
+          entry.innerHTML = `<div class="step-label">Step ${msg.step}</div><div class="names">${msg.samples.map(s => `<span class="name">${s}</span>`).join('')}</div>`;
+          log.prepend(entry);
+        }
+      }
+    }
+
+    if (msg.type === 'done') {
+      sse.close();
+      const startBtn = document.getElementById('btn-start');
+      const stopBtn  = document.getElementById('btn-stop');
+      if (startBtn) startBtn.style.display = 'inline-flex';
+      if (stopBtn)  stopBtn.style.display  = 'none';
+      const statusEl = document.getElementById('train-status');
+      if (statusEl) statusEl.textContent = 'done';
+      const pSvg = document.getElementById('pipeline-svg');
+      if (pSvg) renderPipeline(pSvg, PIPELINE_NODES, Object.fromEntries(PIPELINE_NODES.map(n => [n.id, 'done'])));
+    }
+  };
+}
+
+function updateStatusBadge(stage) {
+  const b = document.getElementById('status-badge');
+  if (!b) return;
+  b.textContent = stage;
+  const isActive = stage !== 'idle' && stage !== 'done';
+  b.className = 'tag ' + (isActive ? 'tag-active' : stage === 'done' ? 'tag-done' : 'tag-idle');
+}
+
+// ── Restore state on page load ─────────────────────────────────────────────────
+fetch('/state').then(r => r.json()).then(s => {
+  _numSteps = s.num_steps || 1000;
+  const el = id => document.getElementById(id);
+  if (s.num_params) {
+    if (el('s-params')) el('s-params').textContent = s.num_params.toLocaleString();
+    if (el('s-vocab'))  el('s-vocab').textContent  = s.vocab_size;
+  }
+  if (el('s-step')) el('s-step').textContent = `${s.step}/${s.num_steps}`;
+  if (el('s-loss')) el('s-loss').textContent = s.loss;
+  if (el('s-best')) el('s-best').textContent = s.best_loss;
+  if (s.running) {
+    const startBtn = document.getElementById('btn-start');
+    const stopBtn  = document.getElementById('btn-stop');
+    if (startBtn) startBtn.style.display = 'none';
+    if (stopBtn)  stopBtn.style.display  = 'inline-flex';
+    startSSE();
+  }
+  // restore chart history
+  if (s.losses && s.losses.length > 0) {
+    setTimeout(() => {
+      if (!lossChart) return;
+      lossChart.data.labels = s.losses.map(l => l.step);
+      lossChart.data.datasets[0].data = s.losses.map(l => l.loss);
+      lossChart.update('none');
+    }, 200);
+  }
+  // restore samples log
+  if (s.samples_log && s.samples_log.length > 0) {
+    setTimeout(() => {
+      const log = document.getElementById('samples-log');
+      if (!log) return;
+      log.innerHTML = '';
+      [...s.samples_log].reverse().forEach(entry => {
+        const div = document.createElement('div');
+        div.className = 'sample-entry';
+        div.innerHTML = `<div class="step-label">Step ${entry.step}</div><div class="names">${entry.samples.map(s2 => `<span class="name">${s2}</span>`).join('')}</div>`;
+        log.appendChild(div);
+      });
+    }, 200);
+  }
+});
+</script>
+</body>
+</html>
