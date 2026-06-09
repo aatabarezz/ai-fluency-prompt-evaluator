@@ -2,18 +2,447 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Prompt Evaluator</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #1a1a1a; min-height: 100vh; }
+#app { max-width: 1400px; margin: 0 auto; padding: 16px; }
+
+nav { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 2px solid #e0e0e0; padding-bottom: 0; }
+.tab { padding: 10px 20px; border: none; background: none; cursor: pointer; font-size: 15px;
+       border-bottom: 3px solid transparent; margin-bottom: -2px; color: #666; }
+.tab.active { border-bottom-color: #4a7c59; color: #4a7c59; font-weight: 600; }
+.panel { display: none; } .panel.active { display: block; }
+
+.input-area { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 16px; }
+.input-row { display: flex; gap: 10px; align-items: flex-start; }
+select#model { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; flex-shrink: 0; }
+textarea#prompt { flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px;
+                  font-size: 14px; resize: vertical; min-height: 80px; font-family: inherit; }
+.input-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: flex-start; }
+button#send { background: #4a7c59; color: white; border: none; border-radius: 8px;
+              padding: 10px 20px; font-size: 14px; cursor: pointer; font-weight: 600; }
+button#send:disabled { opacity: .5; cursor: default; }
+button#attach-btn { background: #f0f0f0; border: 1px solid #ddd; border-radius: 8px;
+                    padding: 10px 14px; cursor: pointer; font-size: 16px; display: none; }
+#file-preview { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.file-chip { background: #e8f0ea; border-radius: 6px; padding: 4px 10px; font-size: 12px;
+             display: flex; align-items: center; gap: 6px; }
+.file-chip button { background: none; border: none; cursor: pointer; color: #666; font-size: 14px; }
+
+#score-panel { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+               margin-bottom: 16px; display: none; }
+.score-header { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+.score-badge { font-size: 28px; font-weight: 700; }
+.score-bar-bg { flex: 1; height: 10px; background: #e0e0e0; border-radius: 5px; }
+.score-bar-fill { height: 100%; border-radius: 5px; transition: width .5s; }
+.score-details { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.score-item { padding: 10px 14px; border-radius: 8px; font-size: 13px; line-height: 1.5; }
+.score-item.good { background: #e8f5e9; border-left: 4px solid #43a047; }
+.score-item.bad  { background: #fce4ec; border-left: 4px solid #e53935; }
+.score-item.fix  { background: #fff8e1; border-left: 4px solid #ffa000; }
+.score-item strong { display: block; margin-bottom: 4px; }
+
+#status-bar { text-align: center; color: #666; font-size: 13px; padding: 8px; display: none; }
+.pulse { animation: pulse 1.2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+#split-panel { display: none; margin-bottom: 16px; }
+.split-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.response-card { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.response-card h3 { font-size: 14px; font-weight: 600; color: #555; margin-bottom: 8px; }
+.technique-badge { display: inline-block; background: #e8f0ea; color: #4a7c59; border-radius: 6px;
+                   padding: 3px 10px; font-size: 12px; font-weight: 600; margin-bottom: 10px; }
+.optimized-prompt-box { background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 8px;
+                        padding: 10px; font-size: 12px; color: #555; margin-bottom: 12px;
+                        white-space: pre-wrap; max-height: 120px; overflow-y: auto; }
+.tool-call { background: #1e1e2e; color: #cdd6f4; border-radius: 6px; padding: 8px 12px;
+             font-size: 12px; font-family: monospace; margin-bottom: 6px; }
+.tool-name { color: #89dceb; font-weight: bold; }
+.tool-result { color: #a6e3a1; margin-top: 4px; white-space: pre-wrap; max-height: 100px; overflow-y: auto; }
+.response-text { font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+
+#pref-bar { background: white; border-radius: 12px; padding: 16px;
+            box-shadow: 0 1px 4px rgba(0,0,0,.08); display: none;
+            text-align: center; margin-bottom: 16px; }
+#pref-bar p { font-size: 13px; color: #666; margin-bottom: 12px; }
+.pref-btns { display: flex; gap: 10px; justify-content: center; }
+.pref-btn { padding: 10px 24px; border-radius: 8px; border: 2px solid #ddd;
+            background: white; cursor: pointer; font-size: 14px; font-weight: 600; transition: all .2s; }
+.pref-btn:hover { border-color: #4a7c59; color: #4a7c59; }
+.pref-btn.selected { background: #4a7c59; color: white; border-color: #4a7c59; }
+
+#token-footer { background: white; border-radius: 12px; padding: 12px 16px;
+                box-shadow: 0 1px 4px rgba(0,0,0,.08); display: none;
+                font-size: 13px; color: #555; text-align: center; }
+#token-footer span { margin: 0 16px; }
+#token-footer strong { color: #1a1a1a; }
+
+.archive-toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+.archive-toolbar button { padding: 8px 16px; border-radius: 8px; border: 1px solid #ddd;
+                           background: white; cursor: pointer; font-size: 13px; }
+.archive-toolbar button:hover { background: #f0f0f0; }
+#archive-table { width: 100%; border-collapse: collapse; background: white;
+                 border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+#archive-table th { background: #f5f5f5; padding: 10px 14px; text-align: left; font-size: 13px; color: #555; }
+#archive-table td { padding: 10px 14px; border-top: 1px solid #f0f0f0; font-size: 13px; vertical-align: top; }
+#archive-table tr:hover td { background: #fafafa; cursor: pointer; }
+.detail-row td { background: #fafafa !important; padding: 16px !important; cursor: default !important; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px; }
+.detail-grid pre { white-space: pre-wrap; background: #f5f5f5; padding: 8px; border-radius: 6px; max-height: 200px; overflow-y: auto; }
+.score-pill { display: inline-block; background: #e8f0ea; color: #4a7c59; border-radius: 12px;
+              padding: 2px 10px; font-weight: 600; font-size: 12px; }
+.pref-pill { display: inline-block; background: #e3f2fd; color: #1976d2; border-radius: 12px;
+             padding: 2px 10px; font-size: 12px; }
+.error-bar { background: #fce4ec; border-left: 4px solid #e53935; border-radius: 8px;
+             padding: 10px 14px; font-size: 13px; color: #c62828; margin-bottom: 16px; display: none; }
+</style>
 </head>
 <body>
-  <div id="app">
-    <nav>
-      <button class="tab active" data-tab="evaluate">Evaluate</button>
-      <button class="tab" data-tab="archive">Archive</button>
-    </nav>
-    <div id="evaluate" class="panel active"></div>
-    <div id="archive" class="panel"></div>
+<div id="app">
+  <nav>
+    <button class="tab active" data-tab="evaluate">Evaluate</button>
+    <button class="tab" data-tab="archive">Archive</button>
+  </nav>
+
+  <div id="evaluate" class="panel active">
+    <div class="input-area">
+      <div class="input-row">
+        <select id="model">
+          <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+          <option value="claude-opus-4-8">Opus 4.8</option>
+          <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+        </select>
+        <textarea id="prompt" placeholder="Enter your prompt here…"></textarea>
+        <div class="input-actions">
+          <button id="attach-btn" title="Attach file">📎</button>
+          <button id="send">Send</button>
+        </div>
+      </div>
+      <div id="file-preview"></div>
+      <input type="file" id="file-input" multiple accept="image/*,audio/*,video/*" style="display:none">
+    </div>
+
+    <div id="error-bar" class="error-bar"></div>
+    <div id="status-bar"></div>
+    <div id="score-panel"></div>
+    <div id="split-panel">
+      <div class="split-grid">
+        <div class="response-card">
+          <h3>Original Prompt Response</h3>
+          <div id="left-tools"></div>
+          <div id="left-response" class="response-text"></div>
+        </div>
+        <div class="response-card">
+          <h3>Optimized Prompt Response</h3>
+          <div id="technique-badge" class="technique-badge" style="display:none"></div>
+          <div id="optimized-prompt-box" class="optimized-prompt-box" style="display:none"></div>
+          <div id="right-tools"></div>
+          <div id="right-response" class="response-text"></div>
+        </div>
+      </div>
+    </div>
+    <div id="pref-bar">
+      <p>Which response did you prefer?</p>
+      <div class="pref-btns">
+        <button class="pref-btn" data-pref="left">Prefer Left</button>
+        <button class="pref-btn" data-pref="both">Prefer Both</button>
+        <button class="pref-btn" data-pref="right">Prefer Right</button>
+      </div>
+    </div>
+    <div id="token-footer"></div>
   </div>
-<script></script>
+
+  <div id="archive" class="panel">
+    <div class="archive-toolbar">
+      <button id="dl-selected">Download Selected</button>
+      <button id="dl-all">Download All</button>
+      <span id="archive-count" style="margin-left:auto;color:#999;font-size:13px"></span>
+    </div>
+    <table id="archive-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="check-all"></th>
+          <th>Time</th><th>Model</th><th>Prompt</th>
+          <th>Score</th><th>Technique</th><th>Preference</th><th>Tokens</th>
+        </tr>
+      </thead>
+      <tbody id="archive-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// Tab switching
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab,.panel').forEach(el => el.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'archive') loadArchive();
+  });
+});
+
+// Multimodal file attach
+const modelSel = document.getElementById('model');
+const attachBtn = document.getElementById('attach-btn');
+const fileInput = document.getElementById('file-input');
+const filePreview = document.getElementById('file-preview');
+let attachedFiles = [];
+
+// All models support multimodal — show attach button always after page load
+attachBtn.style.display = '';
+
+modelSel.addEventListener('change', () => { attachBtn.style.display = ''; });
+attachBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', async () => {
+  for (const f of fileInput.files) {
+    const b64 = await toB64(f);
+    attachedFiles.push({name: f.name, type: f.type, b64});
+  }
+  renderPreviews();
+  fileInput.value = '';
+});
+
+function toB64(file) {
+  return new Promise(res => {
+    const r = new FileReader();
+    r.onload = e => res(e.target.result.split(',')[1]);
+    r.readAsDataURL(file);
+  });
+}
+
+function renderPreviews() {
+  filePreview.innerHTML = attachedFiles.map((f, i) =>
+    `<div class="file-chip">📄 ${escHtml(f.name)} <button onclick="removeFile(${i})">✕</button></div>`
+  ).join('');
+}
+window.removeFile = i => { attachedFiles.splice(i, 1); renderPreviews(); };
+
+// Evaluate
+let currentSessionId = null;
+
+document.getElementById('send').addEventListener('click', runEval);
+document.getElementById('prompt').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) runEval();
+});
+
+function setStatus(msg) {
+  const bar = document.getElementById('status-bar');
+  bar.style.display = msg ? 'block' : 'none';
+  bar.innerHTML = msg ? `<span class="pulse">${msg}</span>` : '';
+}
+
+function showError(msg) {
+  const bar = document.getElementById('error-bar');
+  bar.textContent = '⚠ ' + msg;
+  bar.style.display = 'block';
+}
+
+function renderTools(containerId, tools) {
+  document.getElementById(containerId).innerHTML = (tools || []).map(t => `
+    <div class="tool-call">
+      <div><span class="tool-name">${escHtml(t.tool)}</span> — ${escHtml(JSON.stringify(t.input))}</div>
+      <div class="tool-result">${escHtml(String(t.output))}</div>
+    </div>`).join('');
+}
+
+async function runEval() {
+  const prompt = document.getElementById('prompt').value.trim();
+  if (!prompt) return;
+  const model = modelSel.value;
+  const btn = document.getElementById('send');
+
+  btn.disabled = true;
+  currentSessionId = null;
+  document.getElementById('error-bar').style.display = 'none';
+  document.getElementById('score-panel').style.display = 'none';
+  document.getElementById('split-panel').style.display = 'none';
+  document.getElementById('pref-bar').style.display = 'none';
+  document.getElementById('token-footer').style.display = 'none';
+  document.getElementById('left-tools').innerHTML = '';
+  document.getElementById('left-response').textContent = '';
+  document.getElementById('right-tools').innerHTML = '';
+  document.getElementById('right-response').textContent = '';
+  document.getElementById('technique-badge').style.display = 'none';
+  document.getElementById('optimized-prompt-box').style.display = 'none';
+  document.querySelectorAll('.pref-btn').forEach(b => b.classList.remove('selected'));
+
+  setStatus('⏳ Scoring your prompt…');
+
+  try {
+    const res = await fetch('/evaluate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({prompt, model, attachments: attachedFiles})
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream: true});
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      let event = null;
+      for (const line of lines) {
+        if (line.startsWith('event: ')) event = line.slice(7).trim();
+        if (line.startsWith('data: ') && event) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            handleSSE(event, data);
+          } catch (_) {}
+          event = null;
+        }
+      }
+    }
+  } catch (err) {
+    showError('Connection error: ' + err.message);
+  }
+
+  btn.disabled = false;
+  setStatus('');
+}
+
+function handleSSE(event, data) {
+  if (event === 'status') {
+    const msgs = {
+      scoring: '⏳ Scoring your prompt…',
+      left: '🤖 Generating original response…',
+      optimizing: '✨ Optimizing your prompt…',
+      right: '🚀 Running optimized prompt…'
+    };
+    setStatus(msgs[data.phase] || data.phase);
+  } else if (event === 'error') {
+    showError(data.message || 'An error occurred');
+    document.getElementById('send').disabled = false;
+    setStatus('');
+  } else if (event === 'score') {
+    const color = data.score >= 7 ? '#43a047' : data.score >= 4 ? '#ffa000' : '#e53935';
+    const pct = (data.score / 10) * 100;
+    const panel = document.getElementById('score-panel');
+    panel.style.display = 'block';
+    panel.innerHTML = `
+      <div class="score-header">
+        <div class="score-badge" style="color:${color}">${data.score}/10</div>
+        <div class="score-bar-bg"><div class="score-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+      </div>
+      <div class="score-details">
+        <div class="score-item good"><strong>✓ What works</strong>${escHtml(data.good || '')}</div>
+        <div class="score-item bad"><strong>✗ What doesn't</strong>${escHtml(data.bad || '')}</div>
+        <div class="score-item fix"><strong>→ How to improve</strong>${escHtml(data.fix || '')}</div>
+      </div>`;
+  } else if (event === 'left') {
+    document.getElementById('split-panel').style.display = 'block';
+    renderTools('left-tools', data.tools);
+    document.getElementById('left-response').textContent = data.response || '';
+  } else if (event === 'optimized_prompt') {
+    const badge = document.getElementById('technique-badge');
+    badge.textContent = '🎯 ' + (data.technique || '');
+    badge.style.display = 'inline-block';
+    const box = document.getElementById('optimized-prompt-box');
+    box.textContent = data.optimized_prompt || '';
+    box.style.display = 'block';
+  } else if (event === 'right') {
+    renderTools('right-tools', data.tools);
+    document.getElementById('right-response').textContent = data.response || '';
+  } else if (event === 'done') {
+    currentSessionId = data.session_id;
+    document.getElementById('pref-bar').style.display = 'block';
+    const tf = document.getElementById('token-footer');
+    tf.style.display = 'block';
+    tf.innerHTML =
+      `<span>Input <strong>${(data.tokens_input || 0).toLocaleString()}</strong></span>` +
+      `<span>Output <strong>${(data.tokens_output || 0).toLocaleString()}</strong></span>` +
+      `<span>Total <strong>${(data.tokens_total || 0).toLocaleString()}</strong></span>`;
+  }
+}
+
+document.querySelectorAll('.pref-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (!currentSessionId) return;
+    document.querySelectorAll('.pref-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    await fetch(`/sessions/${currentSessionId}/preference`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({preference: btn.dataset.pref})
+    });
+  });
+});
+
+// Archive
+let expandedRow = null;
+
+async function loadArchive() {
+  try {
+    const data = await fetch('/archive').then(r => r.json());
+    const tbody = document.getElementById('archive-body');
+    document.getElementById('archive-count').textContent = `${data.total} sessions`;
+    tbody.innerHTML = data.rows.map(r => `
+      <tr data-id="${r.id}" onclick="toggleDetail(${r.id}, this)">
+        <td onclick="event.stopPropagation()"><input type="checkbox" class="row-check" value="${r.id}"></td>
+        <td>${new Date(r.created_at).toLocaleString()}</td>
+        <td>${escHtml((r.model || '').replace('claude-', ''))}</td>
+        <td>${escHtml(r.prompt_preview || '')}${(r.prompt_preview || '').length >= 80 ? '…' : ''}</td>
+        <td><span class="score-pill">${r.score ?? '-'}/10</span></td>
+        <td>${escHtml(r.optimized_technique || '-')}</td>
+        <td>${r.preference ? `<span class="pref-pill">${escHtml(r.preference)}</span>` : '-'}</td>
+        <td>${(r.tokens_total || 0).toLocaleString()}</td>
+      </tr>`).join('');
+  } catch (e) {
+    document.getElementById('archive-body').innerHTML =
+      `<tr><td colspan="8" style="color:#999;text-align:center;padding:20px">Failed to load archive</td></tr>`;
+  }
+}
+
+window.toggleDetail = async (id, tr) => {
+  const existing = document.getElementById('detail-' + id);
+  if (existing) { existing.remove(); expandedRow = null; return; }
+  if (expandedRow) { document.getElementById('detail-' + expandedRow)?.remove(); }
+  expandedRow = id;
+
+  try {
+    const d = await fetch(`/archive/${id}`).then(r => r.json());
+    const detail = document.createElement('tr');
+    detail.id = 'detail-' + id;
+    detail.className = 'detail-row';
+    detail.innerHTML = `<td colspan="8">
+      <div class="detail-grid">
+        <div><strong>Original Prompt</strong><pre>${escHtml(d.original_prompt || '')}</pre></div>
+        <div><strong>Optimized Prompt (${escHtml(d.optimized_technique || '')})</strong><pre>${escHtml(d.optimized_prompt || '')}</pre></div>
+        <div><strong>Left Response</strong><pre>${escHtml(d.left_response || '')}</pre></div>
+        <div><strong>Right Response</strong><pre>${escHtml(d.right_response || '')}</pre></div>
+      </div>
+    </td>`;
+    tr.after(detail);
+  } catch (e) {
+    console.error('Failed to load detail', e);
+  }
+};
+
+document.getElementById('check-all').addEventListener('change', e => {
+  document.querySelectorAll('.row-check').forEach(c => c.checked = e.target.checked);
+});
+
+document.getElementById('dl-selected').addEventListener('click', () => {
+  const ids = [...document.querySelectorAll('.row-check:checked')].map(c => c.value).join(',');
+  if (!ids) { alert('Select at least one row.'); return; }
+  window.location = '/archive/export?ids=' + ids;
+});
+
+document.getElementById('dl-all').addEventListener('click', () => {
+  window.location = '/archive/export';
+});
+
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+</script>
 </body>
 </html>
