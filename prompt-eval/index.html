@@ -3,169 +3,827 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Prompt Evaluator</title>
+<title>AI Fluency — Prompt Evaluator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Tiempos+Headline:wght@400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
+:root {
+  --cream:        #f0ece3;
+  --cream-dark:   #e8e2d6;
+  --cream-deeper: #ddd6c8;
+  --ink:          #1a1814;
+  --ink-soft:     #4a4640;
+  --ink-muted:    #8a8480;
+  --coral:        #d4755a;
+  --coral-light:  #f0d8d0;
+  --coral-dark:   #b85c42;
+  --surface:      #faf8f3;
+  --surface-alt:  #f4f0e8;
+  --border:       rgba(26,24,20,.1);
+  --border-soft:  rgba(26,24,20,.06);
+  --shadow-sm:    0 1px 3px rgba(26,24,20,.06), 0 1px 2px rgba(26,24,20,.04);
+  --shadow-md:    0 4px 16px rgba(26,24,20,.08), 0 2px 6px rgba(26,24,20,.05);
+  --radius:       14px;
+  --radius-sm:    8px;
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --font-body:    'Inter', system-ui, sans-serif;
+  --green-soft:   #e6f0e8;
+  --green:        #3d7a4a;
+  --red-soft:     #fce8e4;
+  --red:          #c0392b;
+  --amber-soft:   #fef3e2;
+  --amber:        #b45309;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #1a1a1a; min-height: 100vh; }
-#app { max-width: 1400px; margin: 0 auto; padding: 16px; }
 
-nav { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 2px solid #e0e0e0; padding-bottom: 0; }
-.tab { padding: 10px 20px; border: none; background: none; cursor: pointer; font-size: 15px;
-       border-bottom: 3px solid transparent; margin-bottom: -2px; color: #666; }
-.tab.active { border-bottom-color: #4a7c59; color: #4a7c59; font-weight: 600; }
-.panel { display: none; } .panel.active { display: block; }
+html { scroll-behavior: smooth; }
 
-.input-area { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 16px; }
-.input-row { display: flex; gap: 10px; align-items: flex-start; }
-select#model { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; flex-shrink: 0; }
-textarea#prompt { flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px;
-                  font-size: 14px; resize: vertical; min-height: 80px; font-family: inherit; }
-.input-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: flex-start; }
-button#send { background: #4a7c59; color: white; border: none; border-radius: 8px;
-              padding: 10px 20px; font-size: 14px; cursor: pointer; font-weight: 600; }
-button#send:disabled { opacity: .5; cursor: default; }
-button#attach-btn { background: #f0f0f0; border: 1px solid #ddd; border-radius: 8px;
-                    padding: 10px 14px; cursor: pointer; font-size: 16px; display: none; }
-#file-preview { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-.file-chip { background: #e8f0ea; border-radius: 6px; padding: 4px 10px; font-size: 12px;
-             display: flex; align-items: center; gap: 6px; }
-.file-chip button { background: none; border: none; cursor: pointer; color: #666; font-size: 14px; }
+body {
+  font-family: var(--font-body);
+  background: var(--cream);
+  color: var(--ink);
+  min-height: 100vh;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
 
-#score-panel { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08);
-               margin-bottom: 16px; display: none; }
-.score-header { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
-.score-badge { font-size: 28px; font-weight: 700; }
-.score-bar-bg { flex: 1; height: 10px; background: #e0e0e0; border-radius: 5px; }
-.score-bar-fill { height: 100%; border-radius: 5px; transition: width .5s; }
-.score-details { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-.score-item { padding: 10px 14px; border-radius: 8px; font-size: 13px; line-height: 1.5; }
-.score-item.good { background: #e8f5e9; border-left: 4px solid #43a047; }
-.score-item.bad  { background: #fce4ec; border-left: 4px solid #e53935; }
-.score-item.fix  { background: #fff8e1; border-left: 4px solid #ffa000; }
-.score-item strong { display: block; margin-bottom: 4px; }
+/* ── Site header ───────────────────────────────────────────────── */
+.site-header {
+  text-align: center;
+  padding: 48px 24px 32px;
+  user-select: none;
+}
 
-#status-bar { text-align: center; color: #666; font-size: 13px; padding: 8px; display: none; }
-.pulse { animation: pulse 1.2s infinite; }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+.site-header-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
 
-#split-panel { display: none; margin-bottom: 16px; }
-.split-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.response-card { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-.response-card h3 { font-size: 14px; font-weight: 600; color: #555; margin-bottom: 8px; }
-.technique-badge { display: inline-block; background: #e8f0ea; color: #4a7c59; border-radius: 6px;
-                   padding: 3px 10px; font-size: 12px; font-weight: 600; margin-bottom: 10px; }
-.optimized-prompt-box { background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 8px;
-                        padding: 10px; font-size: 12px; color: #555; margin-bottom: 12px;
-                        white-space: pre-wrap; max-height: 120px; overflow-y: auto; }
-.tool-call { background: #1e1e2e; color: #cdd6f4; border-radius: 6px; padding: 8px 12px;
-             font-size: 12px; font-family: monospace; margin-bottom: 6px; }
-.tool-name { color: #89dceb; font-weight: bold; }
-.tool-result { color: #a6e3a1; margin-top: 4px; white-space: pre-wrap; max-height: 100px; overflow-y: auto; }
-.response-text { font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+.asterisk {
+  font-size: 32px;
+  color: var(--coral);
+  line-height: 1;
+  animation: spin-in .6s cubic-bezier(.34,1.56,.64,1) both;
+}
 
-#pref-bar { background: white; border-radius: 12px; padding: 16px;
-            box-shadow: 0 1px 4px rgba(0,0,0,.08); display: none;
-            text-align: center; margin-bottom: 16px; }
-#pref-bar p { font-size: 13px; color: #666; margin-bottom: 12px; }
+@keyframes spin-in {
+  from { transform: rotate(-90deg) scale(.4); opacity: 0; }
+  to   { transform: rotate(0deg) scale(1); opacity: 1; }
+}
+
+.site-title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.site-title-top {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-style: italic;
+  color: var(--coral);
+  letter-spacing: .04em;
+  line-height: 1;
+}
+
+.site-title-main {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 400;
+  color: var(--ink);
+  letter-spacing: -.01em;
+  line-height: 1.1;
+}
+
+/* ── Layout ────────────────────────────────────────────────────── */
+#app {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 24px 64px;
+}
+
+/* ── Nav tabs ──────────────────────────────────────────────────── */
+nav {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+
+.tab {
+  padding: 10px 20px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: .01em;
+  color: var(--ink-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color .15s, border-color .15s;
+}
+
+.tab:hover { color: var(--ink-soft); }
+.tab.active { color: var(--ink); border-bottom-color: var(--coral); }
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ── Input card ────────────────────────────────────────────────── */
+.input-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.input-top {
+  padding: 16px 16px 0;
+}
+
+textarea#prompt {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+  min-height: 96px;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+textarea#prompt:focus {
+  border-color: var(--coral);
+  box-shadow: 0 0 0 3px rgba(212,117,90,.12);
+}
+
+textarea#prompt::placeholder { color: var(--ink-muted); }
+
+.input-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px 12px;
+  gap: 10px;
+}
+
+.input-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+select#model {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--cream-dark);
+  color: var(--ink-soft);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 24px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238a8480' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  transition: border-color .15s;
+}
+
+select#model:focus { border-color: var(--coral); }
+
+#attach-btn {
+  display: none;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--cream-dark);
+  color: var(--ink-soft);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+
+#attach-btn:hover { background: var(--cream-deeper); border-color: var(--ink-muted); }
+
+.input-right { display: flex; align-items: center; gap: 8px; }
+
+.hint-text {
+  font-size: 11px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+#send {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  background: var(--coral);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s, transform .1s, box-shadow .15s;
+  box-shadow: 0 1px 4px rgba(212,117,90,.3);
+}
+
+#send:hover { background: var(--coral-dark); box-shadow: 0 2px 8px rgba(212,117,90,.4); }
+#send:active { transform: scale(.97); }
+#send:disabled { opacity: .45; cursor: default; transform: none; box-shadow: none; }
+
+#send svg { flex-shrink: 0; }
+
+#file-preview {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 0 16px 10px;
+}
+
+.file-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--coral-light);
+  color: var(--coral-dark);
+  border-radius: 20px;
+  padding: 3px 10px 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.file-chip button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--coral-dark);
+  font-size: 12px;
+  line-height: 1;
+  opacity: .7;
+  padding: 0;
+  margin-left: 2px;
+}
+
+.file-chip button:hover { opacity: 1; }
+
+/* ── Status bar ────────────────────────────────────────────────── */
+#status-bar {
+  display: none;
+  text-align: center;
+  padding: 14px;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+.status-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--coral);
+  border-radius: 50%;
+  animation: blink 1.1s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: .3; transform: scale(.7); }
+}
+
+/* ── Error bar ─────────────────────────────────────────────────── */
+.error-bar {
+  display: none;
+  background: var(--red-soft);
+  border: 1px solid rgba(192,57,43,.15);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--red);
+  margin-bottom: 16px;
+}
+
+/* ── Score panel ───────────────────────────────────────────────── */
+#score-panel {
+  display: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow-sm);
+  animation: fade-up .3s ease both;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.score-header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+
+.score-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 2px;
+}
+
+.score-badge {
+  font-family: var(--font-display);
+  font-size: 40px;
+  line-height: 1;
+  font-weight: 400;
+}
+
+.score-bar-wrap { flex: 1; }
+
+.score-bar-bg {
+  height: 6px;
+  background: var(--cream-deeper);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width .7s cubic-bezier(.34,1.56,.64,1);
+}
+
+.score-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+}
+
+.score-item {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.score-item strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+}
+
+.score-item.good { background: var(--green-soft); color: #1f3d26; }
+.score-item.good strong { color: var(--green); }
+.score-item.bad  { background: var(--red-soft);  color: #3d1f1f; }
+.score-item.bad  strong { color: var(--red); }
+.score-item.fix  { background: var(--amber-soft); color: #3d2c0f; }
+.score-item.fix  strong { color: var(--amber); }
+
+/* ── Split panel ───────────────────────────────────────────────── */
+#split-panel {
+  display: none;
+  margin-bottom: 20px;
+  animation: fade-up .3s ease both;
+}
+
+.split-label-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+
+.split-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  padding-left: 2px;
+}
+
+.split-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.response-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: var(--shadow-sm);
+  min-height: 180px;
+}
+
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 8px;
+}
+
+.card-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.technique-badge {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  background: var(--coral-light);
+  color: var(--coral-dark);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.optimized-prompt-box {
+  display: none;
+  background: var(--cream);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-bottom: 12px;
+  white-space: pre-wrap;
+  max-height: 110px;
+  overflow-y: auto;
+  line-height: 1.55;
+}
+
+.tool-call {
+  background: #1c1c1e;
+  color: #e0ddd8;
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font-size: 11.5px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  margin-bottom: 8px;
+  border: 1px solid rgba(255,255,255,.06);
+}
+
+.tool-name { color: #f4a87c; font-weight: 700; }
+.tool-result { color: #7ec894; margin-top: 5px; white-space: pre-wrap; max-height: 90px; overflow-y: auto; opacity: .9; }
+
+.response-text {
+  font-size: 13.5px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  color: var(--ink-soft);
+}
+
+/* ── Preference bar ────────────────────────────────────────────── */
+#pref-bar {
+  display: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 20px;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+  animation: fade-up .3s ease both;
+}
+
+#pref-bar p {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-style: italic;
+  color: var(--ink-soft);
+  margin-bottom: 14px;
+}
+
 .pref-btns { display: flex; gap: 10px; justify-content: center; }
-.pref-btn { padding: 10px 24px; border-radius: 8px; border: 2px solid #ddd;
-            background: white; cursor: pointer; font-size: 14px; font-weight: 600; transition: all .2s; }
-.pref-btn:hover { border-color: #4a7c59; color: #4a7c59; }
-.pref-btn.selected { background: #4a7c59; color: white; border-color: #4a7c59; }
 
-#token-footer { background: white; border-radius: 12px; padding: 12px 16px;
-                box-shadow: 0 1px 4px rgba(0,0,0,.08); display: none;
-                font-size: 13px; color: #555; text-align: center; }
-#token-footer span { margin: 0 16px; }
-#token-footer strong { color: #1a1a1a; }
+.pref-btn {
+  padding: 9px 22px;
+  border-radius: 20px;
+  border: 1.5px solid var(--border);
+  background: var(--cream);
+  color: var(--ink-soft);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .15s;
+}
 
-.archive-toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
-.archive-toolbar button { padding: 8px 16px; border-radius: 8px; border: 1px solid #ddd;
-                           background: white; cursor: pointer; font-size: 13px; }
-.archive-toolbar button:hover { background: #f0f0f0; }
-#archive-table { width: 100%; border-collapse: collapse; background: white;
-                 border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-#archive-table th { background: #f5f5f5; padding: 10px 14px; text-align: left; font-size: 13px; color: #555; }
-#archive-table td { padding: 10px 14px; border-top: 1px solid #f0f0f0; font-size: 13px; vertical-align: top; }
-#archive-table tr:hover td { background: #fafafa; cursor: pointer; }
-.detail-row td { background: #fafafa !important; padding: 16px !important; cursor: default !important; }
-.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px; }
-.detail-grid pre { white-space: pre-wrap; background: #f5f5f5; padding: 8px; border-radius: 6px; max-height: 200px; overflow-y: auto; }
-.score-pill { display: inline-block; background: #e8f0ea; color: #4a7c59; border-radius: 12px;
-              padding: 2px 10px; font-weight: 600; font-size: 12px; }
-.pref-pill { display: inline-block; background: #e3f2fd; color: #1976d2; border-radius: 12px;
-             padding: 2px 10px; font-size: 12px; }
-.error-bar { background: #fce4ec; border-left: 4px solid #e53935; border-radius: 8px;
-             padding: 10px 14px; font-size: 13px; color: #c62828; margin-bottom: 16px; display: none; }
+.pref-btn:hover { border-color: var(--coral); color: var(--coral); background: var(--coral-light); }
+.pref-btn.selected { background: var(--coral); color: white; border-color: var(--coral); }
+
+/* ── Token footer ──────────────────────────────────────────────── */
+#token-footer {
+  display: none;
+  background: var(--surface-alt);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  font-size: 12px;
+  color: var(--ink-muted);
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+#token-footer .tok-item { margin: 0 14px; }
+#token-footer strong { color: var(--ink-soft); font-weight: 600; }
+#token-footer .tok-divider { color: var(--cream-deeper); }
+
+/* ── Archive tab ───────────────────────────────────────────────── */
+.archive-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  align-items: center;
+}
+
+.archive-toolbar button {
+  padding: 7px 14px;
+  border-radius: 20px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .15s;
+}
+
+.archive-toolbar button:hover { border-color: var(--coral); color: var(--coral); background: var(--coral-light); }
+#archive-count { margin-left: auto; font-size: 12px; color: var(--ink-muted); }
+
+#archive-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+#archive-table th {
+  background: var(--surface-alt);
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+#archive-table td {
+  padding: 11px 14px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 13px;
+  vertical-align: top;
+  color: var(--ink-soft);
+}
+
+#archive-table tbody tr { cursor: pointer; transition: background .1s; }
+#archive-table tbody tr:hover td { background: var(--surface-alt); }
+
+.detail-row td {
+  background: var(--cream) !important;
+  padding: 16px !important;
+  cursor: default !important;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.detail-grid strong {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 5px;
+}
+
+.detail-grid pre {
+  white-space: pre-wrap;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  max-height: 180px;
+  overflow-y: auto;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  font-family: var(--font-body);
+  font-size: 12px;
+}
+
+.score-pill {
+  display: inline-block;
+  background: var(--green-soft);
+  color: var(--green);
+  border-radius: 20px;
+  padding: 2px 9px;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.pref-pill {
+  display: inline-block;
+  background: var(--coral-light);
+  color: var(--coral-dark);
+  border-radius: 20px;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ── Divider ───────────────────────────────────────────────────── */
+.section-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 24px 0 16px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.section-divider::before,
+.section-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--cream-deeper); border-radius: 3px; }
+
+/* ── Input file hidden ─────────────────────────────────────────── */
+#file-input { display: none; }
 </style>
 </head>
 <body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <span class="asterisk">✳</span>
+    <div class="site-title">
+      <span class="site-title-top">AI Fluency</span>
+      <span class="site-title-main">Prompt Evaluator</span>
+    </div>
+  </div>
+</header>
+
 <div id="app">
   <nav>
     <button class="tab active" data-tab="evaluate">Evaluate</button>
     <button class="tab" data-tab="archive">Archive</button>
   </nav>
 
+  <!-- EVALUATE TAB -->
   <div id="evaluate" class="panel active">
-    <div class="input-area">
-      <div class="input-row">
-        <select id="model">
-          <option value="claude-haiku-4-5-20251001">Haiku 4.5 — Fast &amp; lightweight</option>
-          <option value="claude-sonnet-4-6">Sonnet 4.6 — Balanced</option>
-          <option value="claude-opus-4-8">Opus 4.8 — Most powerful</option>
-        </select>
-        <textarea id="prompt" placeholder="Enter your prompt here…"></textarea>
-        <div class="input-actions">
-          <button id="attach-btn" title="Attach file">📎</button>
-          <button id="send">Send</button>
-        </div>
+
+    <div class="input-card">
+      <div class="input-top">
+        <textarea id="prompt" placeholder="Enter your prompt here… (⌘↵ to send)"></textarea>
       </div>
       <div id="file-preview"></div>
-      <input type="file" id="file-input" multiple accept="image/*,audio/*,video/*" style="display:none">
+      <div class="input-bottom">
+        <div class="input-left">
+          <select id="model">
+            <option value="claude-haiku-4-5-20251001">Haiku 4.5 — Fast &amp; lightweight</option>
+            <option value="claude-sonnet-4-6">Sonnet 4.6 — Balanced</option>
+            <option value="claude-opus-4-8">Opus 4.8 — Most powerful</option>
+          </select>
+          <button id="attach-btn" title="Attach file">📎 Attach</button>
+        </div>
+        <div class="input-right">
+          <span class="hint-text">⌘↵ to send</span>
+          <button id="send">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M14 8L2 2l2.5 6L2 14l12-6z" fill="currentColor"/>
+            </svg>
+            Evaluate
+          </button>
+        </div>
+      </div>
     </div>
 
     <div id="error-bar" class="error-bar"></div>
     <div id="status-bar"></div>
     <div id="score-panel"></div>
+
     <div id="split-panel">
+      <div class="split-label-row">
+        <div class="split-label">Original response</div>
+        <div class="split-label">Optimized response</div>
+      </div>
       <div class="split-grid">
         <div class="response-card">
-          <h3>Original Prompt Response</h3>
+          <div class="card-header">
+            <span class="card-label">As written</span>
+          </div>
           <div id="left-tools"></div>
           <div id="left-response" class="response-text"></div>
         </div>
         <div class="response-card">
-          <h3>Optimized Prompt Response</h3>
-          <div id="technique-badge" class="technique-badge" style="display:none"></div>
-          <div id="optimized-prompt-box" class="optimized-prompt-box" style="display:none"></div>
+          <div class="card-header">
+            <span class="card-label">Rewritten</span>
+            <div id="technique-badge" class="technique-badge"></div>
+          </div>
+          <div id="optimized-prompt-box" class="optimized-prompt-box"></div>
           <div id="right-tools"></div>
           <div id="right-response" class="response-text"></div>
         </div>
       </div>
     </div>
+
     <div id="pref-bar">
       <p>Which response did you prefer?</p>
       <div class="pref-btns">
-        <button class="pref-btn" data-pref="left">Prefer Left</button>
-        <button class="pref-btn" data-pref="both">Prefer Both</button>
-        <button class="pref-btn" data-pref="right">Prefer Right</button>
+        <button class="pref-btn" data-pref="left">Prefer Original</button>
+        <button class="pref-btn" data-pref="both">Both Equal</button>
+        <button class="pref-btn" data-pref="right">Prefer Optimized</button>
       </div>
     </div>
+
     <div id="token-footer"></div>
+
   </div>
 
+  <!-- ARCHIVE TAB -->
   <div id="archive" class="panel">
     <div class="archive-toolbar">
-      <button id="dl-selected">Download Selected</button>
-      <button id="dl-all">Download All</button>
-      <span id="archive-count" style="margin-left:auto;color:#999;font-size:13px"></span>
+      <button id="dl-selected">↓ Download Selected</button>
+      <button id="dl-all">↓ Download All</button>
+      <span id="archive-count"></span>
     </div>
     <table id="archive-table">
       <thead>
         <tr>
           <th><input type="checkbox" id="check-all"></th>
-          <th>Time</th><th>Model</th><th>Prompt</th>
-          <th>Score</th><th>Technique</th><th>Preference</th><th>Tokens</th>
+          <th>Time</th>
+          <th>Model</th>
+          <th>Prompt</th>
+          <th>Score</th>
+          <th>Technique</th>
+          <th>Preference</th>
+          <th>Tokens</th>
         </tr>
       </thead>
       <tbody id="archive-body"></tbody>
@@ -173,8 +831,10 @@ button#attach-btn { background: #f0f0f0; border: 1px solid #ddd; border-radius: 
   </div>
 </div>
 
+<input type="file" id="file-input" multiple accept="image/*,audio/*,video/*">
+
 <script>
-// Tab switching
+// ── Tab switching ────────────────────────────────────────────────
 document.querySelectorAll('.tab').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.tab,.panel').forEach(el => el.classList.remove('active'));
@@ -184,14 +844,13 @@ document.querySelectorAll('.tab').forEach(btn => {
   });
 });
 
-// Multimodal file attach
-const modelSel = document.getElementById('model');
+// ── File attach ──────────────────────────────────────────────────
+const modelSel  = document.getElementById('model');
 const attachBtn = document.getElementById('attach-btn');
 const fileInput = document.getElementById('file-input');
 const filePreview = document.getElementById('file-preview');
 let attachedFiles = [];
 
-// All models support multimodal — show attach button always after page load
 attachBtn.style.display = 'inline-block';
 
 attachBtn.addEventListener('click', () => fileInput.click());
@@ -214,12 +873,12 @@ function toB64(file) {
 
 function renderPreviews() {
   filePreview.innerHTML = attachedFiles.map((f, i) =>
-    `<div class="file-chip">📄 ${escHtml(f.name)} <button onclick="removeFile(${i})">✕</button></div>`
+    `<div class="file-chip">📄 ${escHtml(f.name)}<button onclick="removeFile(${i})">✕</button></div>`
   ).join('');
 }
 window.removeFile = i => { attachedFiles.splice(i, 1); renderPreviews(); };
 
-// Evaluate
+// ── Evaluate ─────────────────────────────────────────────────────
 let currentSessionId = null;
 
 document.getElementById('send').addEventListener('click', runEval);
@@ -230,7 +889,7 @@ document.getElementById('prompt').addEventListener('keydown', e => {
 function setStatus(msg) {
   const bar = document.getElementById('status-bar');
   bar.style.display = msg ? 'block' : 'none';
-  bar.innerHTML = msg ? `<span class="pulse">${msg}</span>` : '';
+  bar.innerHTML = msg ? `<span class="status-dot">${msg}</span>` : '';
 }
 
 function showError(msg) {
@@ -242,7 +901,7 @@ function showError(msg) {
 function renderTools(containerId, tools) {
   document.getElementById(containerId).innerHTML = (tools || []).map(t => `
     <div class="tool-call">
-      <div><span class="tool-name">${escHtml(t.tool)}</span> — ${escHtml(JSON.stringify(t.input))}</div>
+      <div><span class="tool-name">${escHtml(t.tool)}</span>  ${escHtml(JSON.stringify(t.input))}</div>
       <div class="tool-result">${escHtml(String(t.output))}</div>
     </div>`).join('');
 }
@@ -251,24 +910,24 @@ async function runEval() {
   const prompt = document.getElementById('prompt').value.trim();
   if (!prompt) return;
   const model = modelSel.value;
-  const btn = document.getElementById('send');
+  const btn   = document.getElementById('send');
 
   btn.disabled = true;
   currentSessionId = null;
-  document.getElementById('error-bar').style.display = 'none';
+  document.getElementById('error-bar').style.display   = 'none';
   document.getElementById('score-panel').style.display = 'none';
   document.getElementById('split-panel').style.display = 'none';
-  document.getElementById('pref-bar').style.display = 'none';
+  document.getElementById('pref-bar').style.display    = 'none';
   document.getElementById('token-footer').style.display = 'none';
-  document.getElementById('left-tools').innerHTML = '';
-  document.getElementById('left-response').textContent = '';
-  document.getElementById('right-tools').innerHTML = '';
+  document.getElementById('left-tools').innerHTML   = '';
+  document.getElementById('left-response').textContent  = '';
+  document.getElementById('right-tools').innerHTML  = '';
   document.getElementById('right-response').textContent = '';
-  document.getElementById('technique-badge').style.display = 'none';
+  document.getElementById('technique-badge').style.display      = 'none';
   document.getElementById('optimized-prompt-box').style.display = 'none';
   document.querySelectorAll('.pref-btn').forEach(b => b.classList.remove('selected'));
 
-  setStatus('⏳ Scoring your prompt…');
+  setStatus('Scoring your prompt…');
 
   try {
     const res = await fetch('/evaluate', {
@@ -277,7 +936,7 @@ async function runEval() {
       body: JSON.stringify({prompt, model, attachments: attachedFiles})
     });
 
-    const reader = res.body.getReader();
+    const reader  = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = '';
 
@@ -291,10 +950,7 @@ async function runEval() {
       for (const line of lines) {
         if (line.startsWith('event: ')) event = line.slice(7).trim();
         if (line.startsWith('data: ') && event) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            handleSSE(event, data);
-          } catch (_) {}
+          try { handleSSE(event, JSON.parse(line.slice(6))); } catch (_) {}
           event = null;
         }
       }
@@ -308,56 +964,73 @@ async function runEval() {
 }
 
 function handleSSE(event, data) {
+  const statusMsgs = {
+    scoring:    'Scoring your prompt…',
+    left:       'Generating original response…',
+    optimizing: 'Optimizing your prompt…',
+    right:      'Running optimized prompt…'
+  };
+
   if (event === 'status') {
-    const msgs = {
-      scoring: '⏳ Scoring your prompt…',
-      left: '🤖 Generating original response…',
-      optimizing: '✨ Optimizing your prompt…',
-      right: '🚀 Running optimized prompt…'
-    };
-    setStatus(msgs[data.phase] || data.phase);
+    setStatus(statusMsgs[data.phase] || data.phase);
+
   } else if (event === 'error') {
     showError(data.message || 'An error occurred');
     document.getElementById('send').disabled = false;
     setStatus('');
+
   } else if (event === 'score') {
-    const color = data.score >= 7 ? '#43a047' : data.score >= 4 ? '#ffa000' : '#e53935';
-    const pct = (data.score / 10) * 100;
+    const score = data.score ?? 0;
+    const color = score >= 7 ? 'var(--green)' : score >= 4 ? 'var(--amber)' : 'var(--red)';
+    const pct   = (score / 10) * 100;
     const panel = document.getElementById('score-panel');
     panel.style.display = 'block';
     panel.innerHTML = `
       <div class="score-header">
-        <div class="score-badge" style="color:${color}">${data.score}/10</div>
-        <div class="score-bar-bg"><div class="score-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+        <div>
+          <div class="score-label">Prompt score</div>
+          <div class="score-badge" style="color:${color}">${score}<span style="font-size:18px;opacity:.5">/10</span></div>
+        </div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-bg">
+            <div class="score-bar-fill" style="width:${pct}%;background:${color}"></div>
+          </div>
+        </div>
       </div>
       <div class="score-details">
         <div class="score-item good"><strong>✓ What works</strong>${escHtml(data.good || '')}</div>
         <div class="score-item bad"><strong>✗ What doesn't</strong>${escHtml(data.bad || '')}</div>
         <div class="score-item fix"><strong>→ How to improve</strong>${escHtml(data.fix || '')}</div>
       </div>`;
+
   } else if (event === 'left') {
     document.getElementById('split-panel').style.display = 'block';
     renderTools('left-tools', data.tools);
     document.getElementById('left-response').textContent = data.response || '';
+
   } else if (event === 'optimized_prompt') {
     const badge = document.getElementById('technique-badge');
-    badge.textContent = '🎯 ' + (data.technique || '');
-    badge.style.display = 'inline-block';
+    badge.textContent = '✦ ' + (data.technique || '');
+    badge.style.display = 'inline-flex';
     const box = document.getElementById('optimized-prompt-box');
     box.textContent = data.optimized_prompt || '';
     box.style.display = 'block';
+
   } else if (event === 'right') {
     renderTools('right-tools', data.tools);
     document.getElementById('right-response').textContent = data.response || '';
+
   } else if (event === 'done') {
     currentSessionId = data.session_id;
     document.getElementById('pref-bar').style.display = 'block';
     const tf = document.getElementById('token-footer');
     tf.style.display = 'block';
     tf.innerHTML =
-      `<span>Input <strong>${(data.tokens_input || 0).toLocaleString()}</strong></span>` +
-      `<span>Output <strong>${(data.tokens_output || 0).toLocaleString()}</strong></span>` +
-      `<span>Total <strong>${(data.tokens_total || 0).toLocaleString()}</strong></span>`;
+      `<span class="tok-item">Input <strong>${(data.tokens_input || 0).toLocaleString()}</strong></span>` +
+      `<span class="tok-divider">·</span>` +
+      `<span class="tok-item">Output <strong>${(data.tokens_output || 0).toLocaleString()}</strong></span>` +
+      `<span class="tok-divider">·</span>` +
+      `<span class="tok-item">Total <strong>${(data.tokens_total || 0).toLocaleString()}</strong></span>`;
   }
 }
 
@@ -376,12 +1049,12 @@ document.querySelectorAll('.pref-btn').forEach(btn => {
   });
 });
 
-// Archive
+// ── Archive ───────────────────────────────────────────────────────
 let expandedRow = null;
 
 async function loadArchive() {
   try {
-    const data = await fetch('/archive').then(r => r.json());
+    const data  = await fetch('/archive').then(r => r.json());
     const tbody = document.getElementById('archive-body');
     document.getElementById('archive-count').textContent = `${data.total} sessions`;
     tbody.innerHTML = data.rows.map(r => `
@@ -390,40 +1063,38 @@ async function loadArchive() {
         <td>${new Date(r.created_at).toLocaleString()}</td>
         <td>${escHtml((r.model || '').replace('claude-', ''))}</td>
         <td>${escHtml(r.prompt_preview || '')}${(r.prompt_preview || '').length >= 80 ? '…' : ''}</td>
-        <td><span class="score-pill">${r.score ?? '-'}/10</span></td>
-        <td>${escHtml(r.optimized_technique || '-')}</td>
-        <td>${r.preference ? `<span class="pref-pill">${escHtml(r.preference)}</span>` : '-'}</td>
+        <td><span class="score-pill">${r.score ?? '—'}/10</span></td>
+        <td style="font-size:12px">${escHtml(r.optimized_technique || '—')}</td>
+        <td>${r.preference ? `<span class="pref-pill">${escHtml(r.preference)}</span>` : '—'}</td>
         <td>${(r.tokens_total || 0).toLocaleString()}</td>
       </tr>`).join('');
   } catch (e) {
     document.getElementById('archive-body').innerHTML =
-      `<tr><td colspan="8" style="color:#999;text-align:center;padding:20px">Failed to load archive</td></tr>`;
+      `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--ink-muted)">Failed to load archive</td></tr>`;
   }
 }
 
 window.toggleDetail = async (id, tr) => {
   const existing = document.getElementById('detail-' + id);
   if (existing) { existing.remove(); expandedRow = null; return; }
-  if (expandedRow) { document.getElementById('detail-' + expandedRow)?.remove(); }
+  if (expandedRow) document.getElementById('detail-' + expandedRow)?.remove();
   expandedRow = id;
 
   try {
-    const d = await fetch(`/archive/${id}`).then(r => r.json());
+    const d      = await fetch(`/archive/${id}`).then(r => r.json());
     const detail = document.createElement('tr');
-    detail.id = 'detail-' + id;
+    detail.id        = 'detail-' + id;
     detail.className = 'detail-row';
     detail.innerHTML = `<td colspan="8">
       <div class="detail-grid">
         <div><strong>Original Prompt</strong><pre>${escHtml(d.original_prompt || '')}</pre></div>
-        <div><strong>Optimized Prompt (${escHtml(d.optimized_technique || '')})</strong><pre>${escHtml(d.optimized_prompt || '')}</pre></div>
-        <div><strong>Left Response</strong><pre>${escHtml(d.left_response || '')}</pre></div>
-        <div><strong>Right Response</strong><pre>${escHtml(d.right_response || '')}</pre></div>
+        <div><strong>Optimized Prompt — ${escHtml(d.optimized_technique || '')}</strong><pre>${escHtml(d.optimized_prompt || '')}</pre></div>
+        <div><strong>Original Response</strong><pre>${escHtml(d.left_response || '')}</pre></div>
+        <div><strong>Optimized Response</strong><pre>${escHtml(d.right_response || '')}</pre></div>
       </div>
     </td>`;
     tr.after(detail);
-  } catch (e) {
-    console.error('Failed to load detail', e);
-  }
+  } catch (e) { console.error(e); }
 };
 
 document.getElementById('check-all').addEventListener('change', e => {
@@ -441,8 +1112,9 @@ document.getElementById('dl-all').addEventListener('click', () => {
 });
 
 function escHtml(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 </script>
 </body>
