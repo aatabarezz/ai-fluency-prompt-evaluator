@@ -194,7 +194,6 @@ let attachedFiles = [];
 // All models support multimodal — show attach button always after page load
 attachBtn.style.display = '';
 
-modelSel.addEventListener('change', () => { attachBtn.style.display = ''; });
 attachBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', async () => {
   for (const f of fileInput.files) {
@@ -367,11 +366,13 @@ document.querySelectorAll('.pref-btn').forEach(btn => {
     if (!currentSessionId) return;
     document.querySelectorAll('.pref-btn').forEach(b => b.classList.remove('selected'));
     btn.classList.add('selected');
-    await fetch(`/sessions/${currentSessionId}/preference`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({preference: btn.dataset.pref})
-    });
+    try {
+      await fetch(`/sessions/${currentSessionId}/preference`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({preference: btn.dataset.pref})
+      });
+    } catch (e) { console.error('Failed to save preference', e); }
   });
 });
 
