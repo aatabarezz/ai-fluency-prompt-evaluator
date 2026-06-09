@@ -53,6 +53,11 @@
   input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); cursor: pointer; }
   .flex-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .log { font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .infer-entry { border: 1px solid var(--border); border-radius: 6px; padding: 14px; margin-bottom: 12px; background: var(--bg); }
+  .infer-entry-header { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; flex-wrap: wrap; }
+  .infer-uid { font-size: 11px; font-weight: 700; color: var(--accent2); font-family: monospace; }
+  .infer-meta { font-size: 10px; color: var(--muted); background: #1e2433; padding: 2px 7px; border-radius: 4px; }
+  .infer-ts { font-size: 10px; color: var(--muted); margin-left: auto; }
 </style>
 </head>
 <body>
@@ -89,6 +94,22 @@ function switchTab(name) {
 document.getElementById('tab-load').innerHTML = `
 <div class="card">
   <h2>Dataset Source</h2>
+  <div style="display:flex;gap:10px;margin-bottom:14px">
+    <button class="btn btn-ghost" onclick="selectPreset('names')" id="preset-names" style="flex:1;justify-content:center;border-color:var(--accent)">
+      <span style="font-size:15px">🇺🇸</span>
+      <div style="text-align:left">
+        <div style="font-size:11px;font-weight:700;color:var(--text)">English Names</div>
+        <div style="font-size:9px;color:var(--muted)">32,000 names · karpathy/makemore</div>
+      </div>
+    </button>
+    <button class="btn btn-ghost" onclick="selectPreset('mahalle')" id="preset-mahalle" style="flex:1;justify-content:center">
+      <span style="font-size:15px">🇹🇷</span>
+      <div style="text-align:left">
+        <div style="font-size:11px;font-weight:700;color:var(--text)">Turkish Neighbourhoods</div>
+        <div style="font-size:9px;color:var(--muted)">16,070 mahalle · aatabarezz</div>
+      </div>
+    </button>
+  </div>
   <label style="color:var(--muted);font-size:11px">URL</label>
   <input id="ds-url" type="text" value="https://raw.githubusercontent.com/karpathy/makemore/refs/heads/master/names.txt" style="margin-top:6px;margin-bottom:12px">
   <label style="color:var(--muted);font-size:11px">— or paste text (one document per line) —</label>
@@ -115,6 +136,23 @@ document.getElementById('tab-load').innerHTML = `
     </div>
   </div>
 </div>`;
+
+const PRESETS = {
+  names:   'https://raw.githubusercontent.com/karpathy/makemore/refs/heads/master/names.txt',
+  mahalle: 'https://raw.githubusercontent.com/aatabarezz/mahalle-dataset/main/mahalle.txt',
+};
+
+function selectPreset(key) {
+  document.getElementById('ds-url').value = PRESETS[key];
+  document.getElementById('ds-text').value = '';
+  // highlight active preset button
+  ['names','mahalle'].forEach(k => {
+    const btn = document.getElementById('preset-' + k);
+    if (!btn) return;
+    btn.style.borderColor = k === key ? 'var(--accent)' : 'var(--border)';
+    btn.style.background  = k === key ? '#1e1e3a' : 'var(--surface)';
+  });
+}
 
 async function loadData() {
   const url = document.getElementById('ds-url').value.trim();
@@ -159,8 +197,7 @@ const GPT_NODES = [
   {id:'lmhead',    label:'LM Head'},
 ];
 
-function renderPipeline(svgEl, nodes, stageStateMap) {
-  // preserve defs
+function renderPipeline(svgEl, nodes, stageStateMap, clickable) {
   const existingDefs = svgEl.querySelector('defs');
   svgEl.innerHTML = '';
   if (existingDefs) svgEl.appendChild(existingDefs);
@@ -186,13 +223,22 @@ function renderPipeline(svgEl, nodes, stageStateMap) {
       svgEl.appendChild(line);
     }
 
+    // clickable group
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    if (clickable) {
+      g.style.cursor = 'pointer';
+      g.addEventListener('click', () => showNodeDetail(node.id));
+      g.addEventListener('mouseenter', () => { rect.setAttribute('stroke-width', '2.5'); });
+      g.addEventListener('mouseleave', () => { rect.setAttribute('stroke-width', '1.5'); });
+    }
+
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     rect.setAttribute('x', x); rect.setAttribute('y', y);
     rect.setAttribute('width', nw); rect.setAttribute('height', nh);
     rect.setAttribute('rx', 6); rect.setAttribute('fill', fill);
     rect.setAttribute('stroke', stroke); rect.setAttribute('stroke-width', '1.5');
     if (s === 'active') rect.setAttribute('filter', 'url(#glow)');
-    svgEl.appendChild(rect);
+    g.appendChild(rect);
 
     const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     text.setAttribute('x', x + nw / 2); text.setAttribute('y', y + nh / 2 + 5);
@@ -200,8 +246,553 @@ function renderPipeline(svgEl, nodes, stageStateMap) {
     text.setAttribute('fill', color); text.setAttribute('font-size', '11');
     text.setAttribute('font-family', 'monospace');
     text.textContent = node.label;
-    svgEl.appendChild(text);
+    g.appendChild(text);
+
+    svgEl.appendChild(g);
   });
+}
+
+// ── Node detail panels ────────────────────────────────────────────────────────
+let _detailNode = null;
+let _detailInterval = null;
+
+async function showNodeDetail(nodeId) {
+  const panel = document.getElementById('node-detail-panel');
+  if (!panel) return;
+
+  // toggle off if same node clicked again
+  if (_detailNode === nodeId && panel.style.display !== 'none') {
+    panel.style.display = 'none';
+    _detailNode = null;
+    clearInterval(_detailInterval);
+    return;
+  }
+
+  _detailNode = nodeId;
+  panel.style.display = 'block';
+  await _renderDetail(nodeId, panel);
+
+  // auto-refresh while training is active
+  clearInterval(_detailInterval);
+  _detailInterval = setInterval(async () => {
+    if (_detailNode && panel.style.display !== 'none') {
+      const stRes = await fetch('/state').then(r => r.json());
+      if (stRes.running) await _renderDetail(_detailNode, panel, true);
+      else clearInterval(_detailInterval);
+    }
+  }, 1200);
+}
+
+async function _renderDetail(nodeId, panel, silent = false) {
+  if (!silent) panel.innerHTML = `<div class="card" style="border-color:var(--accent)"><div style="color:var(--muted);font-size:11px">Loading…</div></div>`;
+  const sd = await fetch('/step-data').then(r => r.json());
+  if (sd.error) {
+    panel.innerHTML = `<div class="card" style="border-color:var(--accent)"><div style="color:var(--red)">Load a dataset first to see live examples.</div></div>`;
+    return;
+  }
+  const builders = { dataset: detailDataset, tokenizer: detailTokenizer, forward: detailForward, loss: detailLoss, backward: detailBackward, adam: detailAdam };
+  const fn = builders[nodeId];
+  panel.innerHTML = fn ? fn(sd) : '';
+  panel.querySelector('.detail-close')?.addEventListener('click', () => {
+    panel.style.display = 'none';
+    _detailNode = null;
+    clearInterval(_detailInterval);
+  });
+}
+
+function detailHeader(title, subtitle, sd) {
+  const isLive = sd && sd.step > 0;
+  const liveBadge = isLive
+    ? `<span style="font-size:9px;font-weight:700;background:#0f2518;color:#22c55e;border:1px solid #1a4030;border-radius:3px;padding:2px 6px;margin-left:8px;letter-spacing:0.5px">● LIVE · step ${sd.step}</span>`
+    : '';
+  return `<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+    <div>
+      <div style="font-size:13px;font-weight:700;color:var(--text)">${title}${liveBadge}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px">${subtitle}</div>
+    </div>
+    <button class="detail-close" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px">✕</button>
+  </div>`;
+}
+
+function pill(label, val, color='var(--accent2)') {
+  return `<span style="display:inline-flex;align-items:center;gap:5px;background:#1e2433;border:1px solid var(--border);border-radius:4px;padding:3px 9px;font-size:11px;margin:2px">
+    <span style="color:var(--muted)">${label}</span><span style="color:${color};font-weight:700">${val}</span></span>`;
+}
+
+function detailDataset(sd) {
+  const current = sd.doc || '';
+  const rows = sd.sample_docs.map((d, idx) => {
+    const isCurrent = d === current;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);${isCurrent?'background:#0f1e2a;margin:0 -8px;padding:5px 8px;border-radius:4px':''}">
+      <span style="color:var(--accent2);font-weight:700;min-width:20px">${idx+1}</span>
+      <span style="color:${isCurrent?'var(--text)':'var(--muted)'};font-weight:${isCurrent?700:400}">${d}</span>
+      ${isCurrent ? `<span style="font-size:9px;background:#1a3a28;color:#22c55e;border-radius:3px;padding:1px 5px;margin-left:4px">current</span>` : ''}
+      <span style="color:var(--muted);font-size:10px;margin-left:auto">${d.length} ch</span>
+    </div>`;
+  }).join('');
+  return `<div class="card" style="border-color:var(--accent)">
+    ${detailHeader('Dataset', 'A list of documents — the raw fuel for the model', sd)}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      ${pill('total docs', sd.sample_docs.length+'…')}${pill('vocab size', sd.vocab_size)}${pill('BOS id', sd.BOS)}${sd.doc ? pill('current doc', `"${sd.doc}"`, 'var(--green)') : ''}
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Each name is one document. The model sees them one at a time, wrapped with BOS on both sides: <code style="color:var(--accent2)">[BOS, e, m, m, a, BOS]</code></div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Sample documents (highlighted = current step):</div>
+    ${rows}
+  </div>`;
+}
+
+function detailTokenizer(sd) {
+  const doc = sd.doc || sd.example_doc || 'emma';
+  const chars = ['BOS', ...doc.split(''), 'BOS'];
+  const ids   = [sd.BOS, ...doc.split('').map(c => sd.uchars.indexOf(c)), sd.BOS];
+  const tokenBoxes = chars.map((c, i) => {
+    const isBos = i===0 || i===chars.length-1;
+    const borderC = isBos ? 'var(--accent)' : 'var(--border)';
+    const textC   = isBos ? 'var(--accent2)' : 'var(--text)';
+    return `<div style="text-align:center">
+      <div style="background:var(--bg);border:1px solid ${borderC};border-radius:5px;padding:6px 10px;font-size:13px;font-weight:700;color:${textC};min-width:36px">${c}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px">${ids[i]}</div>
+    </div>`;
+  }).join(`<div style="color:var(--muted);align-self:center;font-size:16px;padding:0 2px">→</div>`);
+
+  const vocabTable = sd.uchars.map((c, i) =>
+    `<div style="display:flex;gap:6px;padding:2px 6px;border-radius:3px;background:${i%2===0?'var(--bg)':'transparent'}">
+      <span style="color:var(--accent2);font-weight:700;min-width:18px">${i}</span>
+      <span style="color:var(--text)">'${c}'</span>
+    </div>`).join('') +
+    `<div style="display:flex;gap:6px;padding:2px 6px;background:var(--bg);border-radius:3px">
+      <span style="color:var(--accent2);font-weight:700;min-width:18px">${sd.BOS}</span>
+      <span style="color:var(--accent)">BOS</span>
+    </div>`;
+
+  return `<div class="card" style="border-color:var(--accent)">
+    ${detailHeader('Tokenizer', 'Maps each character to a unique integer ID', sd)}
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px">${sd.step > 0 ? `Step ${sd.step} — encoding` : 'Example: encoding'} <strong style="color:var(--text)">"${doc}"</strong></div>
+    <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:20px">${tokenBoxes}</div>
+    <div class="grid2" style="gap:16px">
+      <div>
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Full vocabulary (${sd.vocab_size} tokens)</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;font-size:11px">${vocabTable}</div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.7">
+        <p><strong style="color:var(--text)">Why character-level?</strong> Simplest possible tokenizer — one integer per character. Production models use BPE (Byte Pair Encoding) with ~100k tokens.</p>
+        <br>
+        <p><strong style="color:var(--text)">BOS token (id ${sd.BOS})</strong> is a special delimiter. It signals "a new document starts/ends here". The model learns to generate a BOS when it wants to finish a name.</p>
+        <br>
+        <p><strong style="color:var(--text)">The integers themselves carry no meaning</strong> — they're just lookup indices into the embedding table.</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+function _fakeVec(seed, len, lo=-1, hi=1) {
+  // deterministic fake vector for illustration
+  const v = [];
+  for (let i = 0; i < len; i++) {
+    const x = Math.sin(seed * 31.7 + i * 17.3) * 0.5 + Math.cos(seed * 7.1 + i * 5.9) * 0.5;
+    v.push((lo + (x * 0.5 + 0.5) * (hi - lo)).toFixed(3));
+  }
+  return v;
+}
+
+function _vecBar(val, maxAbs=1) {
+  const v = parseFloat(val);
+  const pct = Math.min(Math.abs(v) / maxAbs, 1) * 100;
+  const col = v >= 0 ? '#6366f1' : '#ef4444';
+  return `<div style="display:flex;align-items:center;gap:4px;height:14px">
+    <div style="width:50%;display:flex;justify-content:flex-end">
+      ${v < 0 ? `<div style="width:${pct}%;background:${col};height:6px;border-radius:2px 0 0 2px"></div>` : ''}
+    </div>
+    <div style="width:50%">
+      ${v >= 0 ? `<div style="width:${pct}%;background:${col};height:6px;border-radius:0 2px 2px 0"></div>` : ''}
+    </div>
+  </div>`;
+}
+
+function detailForward(sd) {
+  const { n_embd, n_head, n_layer, block_size, vocab_size } = sd;
+  const head_dim = n_embd / n_head;
+
+  // pick current token & position from live data, fallback to 'e'=4 at pos 0
+  const doc = sd.doc || 'emma';
+  const tokens = sd.tokens && sd.tokens.length > 1 ? sd.tokens : [sd.BOS || 26, 4, 12, 12, 0, sd.BOS || 26];
+  const curTokId = tokens[1] || 4;  // first real char
+  const curChar  = sd.uchars && curTokId < sd.uchars.length ? sd.uchars[curTokId] : '?';
+  const curPos   = 1;
+
+  // fake embedding vectors for illustration (deterministic by token id)
+  const showDim = Math.min(n_embd, 8);
+  const tokVec  = _fakeVec(curTokId, showDim);
+  const posVec  = _fakeVec(curPos + 100, showDim);
+  const sumVec  = tokVec.map((v, i) => (parseFloat(v) + parseFloat(posVec[i])).toFixed(3));
+
+  const vecRow = (label, color, vec, note) => `
+    <div style="margin-bottom:10px">
+      <div style="font-size:10px;font-weight:700;color:${color};margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">${label} <span style="color:#475569;font-weight:400;text-transform:none">${note}</span></div>
+      <div style="display:flex;gap:3px;align-items:flex-end">
+        ${vec.map(v => {
+          const h = Math.round(Math.abs(parseFloat(v)) * 28) + 4;
+          const col = parseFloat(v) >= 0 ? color : '#ef4444';
+          return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+            <div style="width:22px;height:${h}px;background:${col};border-radius:2px;opacity:0.85"></div>
+            <div style="font-size:8px;color:#475569;width:22px;text-align:center;overflow:hidden">${v}</div>
+          </div>`;
+        }).join('')}
+        ${n_embd > showDim ? `<div style="font-size:11px;color:#475569;align-self:center;padding-left:4px">…+${n_embd-showDim} more</div>` : ''}
+      </div>
+    </div>`;
+
+  const embSection = `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:12px">
+        Step 1 — Embeddings
+        <span style="color:var(--muted);font-weight:400"> · token <strong style="color:var(--accent2)">'${curChar}'</strong> (id ${curTokId}) at position <strong style="color:var(--accent2)">${curPos}</strong></span>
+      </div>
+
+      <div class="grid2" style="gap:16px;margin-bottom:12px">
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:6px">🔤 <strong style="color:var(--text)">Token embedding</strong> — wte[${curTokId}]</div>
+          <div style="font-size:10px;color:#475569;margin-bottom:8px">Row ${curTokId} of the wte table (${vocab_size} × ${n_embd}). Encodes <em>what</em> the token is.</div>
+          ${vecRow('tok_emb', '#818cf8', tokVec, `wte[${curTokId}] — ${n_embd} dims`)}
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:6px">📍 <strong style="color:var(--text)">Position embedding</strong> — wpe[${curPos}]</div>
+          <div style="font-size:10px;color:#475569;margin-bottom:8px">Row ${curPos} of the wpe table (${block_size} × ${n_embd}). Encodes <em>where</em> in the sequence.</div>
+          ${vecRow('pos_emb', '#f59e0b', posVec, `wpe[${curPos}] — ${n_embd} dims`)}
+        </div>
+      </div>
+
+      <div style="border-top:1px solid var(--border);padding-top:12px">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:8px">➕ <strong style="color:var(--text)">x = tok_emb + pos_emb</strong> — element-wise add, gives the model both identity and position in one vector</div>
+        ${vecRow('x', '#22c55e', sumVec, `combined input — ${n_embd} dims`)}
+        <div style="font-size:10px;color:#475569;margin-top:6px">These two embeddings are the only input to the rest of the network. Everything the model knows about this token starts here.</div>
+      </div>
+    </div>`;
+
+  const attnSection = `
+    <div style="background:var(--bg);border:1px solid #6366f1;border-radius:8px;padding:14px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--accent2);margin-bottom:10px">Step 2 — Multi-Head Attention <span style="color:#475569;font-weight:400">(${n_head} heads × dim ${head_dim})</span></div>
+      <div class="grid2" style="gap:16px;font-size:11px;color:var(--muted);line-height:1.9">
+        <div>
+          <div style="margin-bottom:6px"><span style="color:var(--text);font-weight:700">Q</span> = x · W<sub>q</sub> &nbsp;<span style="color:#475569">[${n_embd}→${n_embd}]</span><br><span style="color:#475569;font-size:10px">"What am I looking for?"</span></div>
+          <div style="margin-bottom:6px"><span style="color:var(--text);font-weight:700">K</span> = x · W<sub>k</sub> &nbsp;<span style="color:#475569">[${n_embd}→${n_embd}]</span><br><span style="color:#475569;font-size:10px">"What do I contain?"</span></div>
+          <div><span style="color:var(--text);font-weight:700">V</span> = x · W<sub>v</sub> &nbsp;<span style="color:#475569">[${n_embd}→${n_embd}]</span><br><span style="color:#475569;font-size:10px">"What do I offer if selected?"</span></div>
+        </div>
+        <div>
+          <div style="margin-bottom:6px"><span style="color:var(--text);font-weight:700">scores</span> = Q · Kᵀ / √${head_dim}<br><span style="color:#475569;font-size:10px">How much should I attend to each past token?</span></div>
+          <div style="margin-bottom:6px"><span style="color:var(--text);font-weight:700">weights</span> = softmax(scores)<br><span style="color:#475569;font-size:10px">Probabilities over past positions</span></div>
+          <div><span style="color:var(--text);font-weight:700">out</span> = Σ weight[t] · V[t]<br><span style="color:#475569;font-size:10px">Weighted sum of all past values → concat ${n_head} heads → W<sub>o</sub></span></div>
+        </div>
+      </div>
+      <div style="background:#1e1e3a;border-radius:5px;padding:8px 12px;margin-top:10px;font-size:10px;color:#475569">
+        ⚡ This is the <strong style="color:var(--accent2)">only place</strong> a token at position t can "see" tokens 0..t−1. The KV cache stores all past keys/values so each new token can attend to the full history without recomputing.
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        ${pill('heads', n_head)}${pill('head_dim', head_dim)}${pill('Wq', `${n_embd}×${n_embd}`)}${pill('Wk', `${n_embd}×${n_embd}`)}${pill('Wv', `${n_embd}×${n_embd}`)}${pill('Wo', `${n_embd}×${n_embd}`)}
+      </div>
+    </div>`;
+
+  // Full MLP node diagram: n_embd → 4*n_embd → n_embd
+  const inN = n_embd;          // 16
+  const hidN = 4 * n_embd;     // 64
+  const outN = n_embd;         // 16
+  const seed = curTokId + 1;
+
+  function fw(i, j, s) {
+    return Math.sin(s * 7.3 + i * 13.1 + j * 5.7) * 0.72;
+  }
+  function fakeHiddenVal(j) {
+    // approximate pre-relu value as sum of weighted inputs
+    let s = 0;
+    for (let i = 0; i < inN; i++) s += fw(i, j, seed);
+    return s / inN;
+  }
+
+  const svgW = 700, svgH = 520;
+  const margin = { top: 30, bottom: 50 };
+  const inR = 9, hidR = 4, outR = 9;
+  const cx = { in: 60, h1: 220, h2: 400, out: 560 };
+
+  function nodeY(idx, total) {
+    const usable = svgH - margin.top - margin.bottom;
+    return margin.top + idx * usable / (total - 1);
+  }
+
+  let mlpSvg = '';
+
+  // fc1 weights: input → hidden (all 16×64 = 1024 lines, thin + transparent)
+  for (let i = 0; i < inN; i++) {
+    for (let j = 0; j < hidN; j++) {
+      const w = fw(i, j, seed);
+      const col = w >= 0 ? '#6366f1' : '#ef4444';
+      const op = (Math.abs(w) * 0.45 + 0.04).toFixed(2);
+      mlpSvg += `<line x1="${cx.in + inR}" y1="${nodeY(i, inN)}" x2="${cx.h1 - hidR}" y2="${nodeY(j, hidN)}" stroke="${col}" stroke-width="0.6" stroke-opacity="${op}"/>`;
+    }
+  }
+
+  // ReLU pass-through dashes
+  for (let j = 0; j < hidN; j++) {
+    const alive = fakeHiddenVal(j) > 0;
+    if (alive) {
+      mlpSvg += `<line x1="${cx.h1 + hidR}" y1="${nodeY(j, hidN)}" x2="${cx.h2 - hidR}" y2="${nodeY(j, hidN)}" stroke="#22c55e" stroke-width="0.6" stroke-opacity="0.35"/>`;
+    }
+  }
+
+  // fc2 weights: hidden → output (all 64×16 = 1024 lines)
+  for (let j = 0; j < hidN; j++) {
+    const alive = fakeHiddenVal(j) > 0;
+    if (!alive) continue; // dead neurons contribute nothing after ReLU
+    for (let k = 0; k < outN; k++) {
+      const w = fw(j, k, seed + 50);
+      const col = w >= 0 ? '#6366f1' : '#ef4444';
+      const op = (Math.abs(w) * 0.45 + 0.04).toFixed(2);
+      mlpSvg += `<line x1="${cx.h2 + hidR}" y1="${nodeY(j, hidN)}" x2="${cx.out - outR}" y2="${nodeY(k, outN)}" stroke="${col}" stroke-width="0.6" stroke-opacity="${op}"/>`;
+    }
+  }
+
+  // hidden nodes pre-ReLU
+  let deadCount = 0;
+  for (let j = 0; j < hidN; j++) {
+    const v = fakeHiddenVal(j);
+    const alive = v > 0;
+    if (!alive) deadCount++;
+    const col = alive ? '#818cf8' : '#2a2d3a';
+    const fill = alive ? '#1e1e3a' : '#111318';
+    mlpSvg += `<circle cx="${cx.h1}" cy="${nodeY(j, hidN)}" r="${hidR}" fill="${fill}" stroke="${col}" stroke-width="1"/>`;
+  }
+
+  // hidden nodes post-ReLU
+  for (let j = 0; j < hidN; j++) {
+    const alive = fakeHiddenVal(j) > 0;
+    const col = alive ? '#22c55e' : '#1e2433';
+    const fill = alive ? '#0c2218' : '#0f1117';
+    mlpSvg += `<circle cx="${cx.h2}" cy="${nodeY(j, hidN)}" r="${hidR}" fill="${fill}" stroke="${col}" stroke-width="1"/>`;
+  }
+
+  // input nodes
+  for (let i = 0; i < inN; i++) {
+    const y = nodeY(i, inN);
+    mlpSvg += `<circle cx="${cx.in}" cy="${y}" r="${inR}" fill="#1e1e3a" stroke="#818cf8" stroke-width="1.5"/>`;
+    mlpSvg += `<text x="${cx.in}" y="${y + 4}" text-anchor="middle" fill="#818cf8" font-size="8" font-family="monospace">x${i}</text>`;
+  }
+
+  // output nodes
+  for (let k = 0; k < outN; k++) {
+    const y = nodeY(k, outN);
+    mlpSvg += `<circle cx="${cx.out}" cy="${y}" r="${outR}" fill="#1e1e3a" stroke="#818cf8" stroke-width="1.5"/>`;
+    mlpSvg += `<text x="${cx.out}" y="${y + 4}" text-anchor="middle" fill="#818cf8" font-size="8" font-family="monospace">y${k}</text>`;
+  }
+
+  // column labels
+  const colLbls = [
+    [cx.in,  [`input`, `[${inN}]`]],
+    [cx.h1,  [`fc1 + ReLU`, `[${hidN} hidden]`]],
+    [cx.h2,  [`after ReLU`, `${deadCount} dead / ${hidN}`]],
+    [cx.out, [`fc2 output`, `[${outN}]`]],
+  ];
+  for (const [x, lines] of colLbls) {
+    lines.forEach((line, li) => {
+      mlpSvg += `<text x="${x}" y="${svgH - margin.bottom + 14 + li * 13}" text-anchor="middle" fill="#475569" font-size="9" font-family="monospace">${line}</text>`;
+    });
+  }
+
+  // weight legend (top)
+  mlpSvg += `<line x1="10" y1="14" x2="26" y2="14" stroke="#6366f1" stroke-width="2"/><text x="30" y="18" fill="#64748b" font-size="9" font-family="monospace">+ weight</text>`;
+  mlpSvg += `<line x1="100" y1="14" x2="116" y2="14" stroke="#ef4444" stroke-width="2"/><text x="120" y="18" fill="#64748b" font-size="9" font-family="monospace">− weight</text>`;
+  mlpSvg += `<circle cx="200" cy="14" r="4" fill="#1e1e3a" stroke="#818cf8" stroke-width="1.5"/><text x="208" y="18" fill="#64748b" font-size="9" font-family="monospace">pre-ReLU</text>`;
+  mlpSvg += `<circle cx="300" cy="14" r="4" fill="#0c2218" stroke="#22c55e" stroke-width="1.5"/><text x="308" y="18" fill="#64748b" font-size="9" font-family="monospace">active</text>`;
+  mlpSvg += `<circle cx="370" cy="14" r="4" fill="#111318" stroke="#2a2d3a" stroke-width="1.5"/><text x="378" y="18" fill="#64748b" font-size="9" font-family="monospace">dead (ReLU=0)</text>`;
+
+  const mlpSection = `
+    <div style="background:var(--bg);border:1px solid #6366f1;border-radius:8px;padding:14px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--accent2);margin-bottom:2px">Step 3 — MLP (per-token, no cross-talk)</div>
+      <div style="font-size:10px;color:#475569;margin-bottom:12px">Full network: ${inN} inputs → ${hidN} hidden → ${outN} outputs. All ${inN*hidN + hidN*outN} weights shown. Opacity = |weight|, colour = sign. Dead neurons (ReLU=0) drop their outgoing connections.</div>
+      <svg viewBox="0 0 ${svgW} ${svgH}" style="width:100%;max-height:520px">${mlpSvg}</svg>
+      <div style="font-size:10px;color:#475569;margin-top:8px">
+        After ReLU, ~50% of hidden nodes are "dead" (output 0). The surviving activations are mixed by fc2 back to [${n_embd}], then added to the residual stream.
+        Unlike Attention, every token runs this independently — no communication.
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+        ${pill('fc1', `${n_embd}×${4*n_embd}`)}${pill('fc2', `${4*n_embd}×${n_embd}`)}${pill('MLP params', (n_embd*4*n_embd*2).toLocaleString())}
+      </div>
+    </div>`;
+
+  const lmSection = `
+    <div style="background:var(--bg);border:1px solid #22c55e;border-radius:8px;padding:14px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:#22c55e;margin-bottom:10px">Step 4 — LM Head → Logits</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
+        Final hidden state <span style="color:var(--text)">[${n_embd}]</span> → <code style="color:#22c55e">lm_head</code> matrix [${n_embd}×${vocab_size}] → <span style="color:var(--text)">${vocab_size} logits</span> (one per vocab token)
+      </div>
+      ${sd.logits_top && sd.logits_top.length ? `
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px">Top predictions at last position${sd.target_token ? ` — correct next token: <strong style="color:#22c55e">'${sd.target_token}'</strong> (p=${sd.target_prob})` : ''}:</div>
+      ${sd.logits_top.map(t => {
+        const bar = Math.round(t.prob * 340);
+        const isTarget = t.token === sd.target_token;
+        return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0">
+          <span style="min-width:24px;font-weight:700;font-size:12px;color:${isTarget?'#22c55e':'var(--text)'}">'${t.token}'</span>
+          <div style="flex:1;background:#1e2433;border-radius:3px;height:8px;overflow:hidden">
+            <div style="width:${bar}px;max-width:100%;height:100%;background:${isTarget?'#22c55e':'#6366f1'};border-radius:3px"></div>
+          </div>
+          <span style="min-width:40px;font-size:11px;color:var(--muted)">${(t.prob*100).toFixed(1)}%</span>
+          <span style="min-width:52px;font-size:10px;color:#475569">logit ${t.logit}</span>
+          ${isTarget?'<span style="font-size:9px;background:#0f2a1a;color:#22c55e;padding:1px 5px;border-radius:3px">✓ target</span>':''}
+        </div>`;
+      }).join('')}` : '<div style="font-size:10px;color:#475569">Start training to see live predictions here.</div>'}
+    </div>`;
+
+  return `<div class="card" style="border-color:var(--accent)">
+    ${detailHeader('GPT Forward Pass', `${sd.num_params.toLocaleString()} params · ${n_layer} layer · ${n_embd}d · ${n_head} heads · vocab ${vocab_size}`, sd)}
+    <div style="font-size:11px;color:var(--muted);margin-bottom:16px">
+      Processing document <strong style="color:var(--text)">"${doc}"</strong> — one token per call, left to right, building up the KV cache.
+    </div>
+    ${embSection}${attnSection}${mlpSection}${lmSection}
+    <div style="font-size:10px;color:#475569;border-top:1px solid var(--border);padding-top:10px">
+      Each call: gpt(token_id, pos_id, keys, values) → ${vocab_size} logits. The residual stream (x) carries information from embedding through all layers to the output.
+    </div>
+  </div>`;
+}
+
+function detailLoss(sd) {
+  const { vocab_size } = sd;
+  const doc = sd.doc || '';
+  const hasLive = sd.logits_top && sd.logits_top.length > 0;
+  const target_token = sd.target_token || '?';
+  const target_prob  = sd.target_prob  || 0;
+  const loss_val = target_prob > 0 ? (-Math.log(target_prob)).toFixed(4) : (sd.loss || '—');
+
+  const topK = hasLive ? sd.logits_top.map(t => {
+    const isTarget = t.token === target_token;
+    const bar = Math.round(t.prob * 340);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+      <span style="min-width:28px;font-weight:700;font-size:12px;color:${isTarget?'var(--green)':'var(--text)'}">'${t.token}'</span>
+      <div style="flex:1;background:#1e2433;border-radius:3px;height:10px;overflow:hidden">
+        <div style="width:${bar}px;max-width:100%;height:100%;background:${isTarget?'#22c55e':'#6366f1'};border-radius:3px"></div>
+      </div>
+      <span style="min-width:44px;font-size:11px;color:var(--muted)">${(t.prob*100).toFixed(1)}%</span>
+      <span style="min-width:52px;font-size:10px;color:#475569">logit ${t.logit}</span>
+      ${isTarget?'<span style="font-size:9px;background:#0f2a1a;color:#22c55e;padding:1px 5px;border-radius:3px">✓ target</span>':''}
+    </div>`;
+  }).join('') : '<div style="color:#475569;font-size:11px">Start training to see live probabilities.</div>';
+
+  return `<div class="card" style="border-color:var(--accent)">
+    ${detailHeader('Cross-Entropy Loss', 'How surprised is the model by the correct next token?', sd)}
+    <div class="grid2" style="gap:20px">
+      <div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
+          Document <strong style="color:var(--text)">"${doc}"</strong> — predicting next token at last position.
+          ${hasLive ? `Correct answer: <strong style="color:var(--green)">'${target_token}'</strong>` : ''}
+        </div>
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Top predictions</div>
+        ${topK}
+        <div style="margin-top:14px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;font-family:monospace;font-size:11px;line-height:2">
+          <div style="color:var(--muted)">loss = −log( p(target) )</div>
+          <div>loss = −log( <span style="color:var(--green)">${(target_prob*100).toFixed(1)}%</span> ) = <span style="color:var(--accent2);font-weight:700">${loss_val}</span></div>
+          <div style="color:var(--muted);font-size:10px">averaged over all positions in the document</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.9">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+          ${pill('current loss', sd.loss || '—', 'var(--accent2)')}
+          ${pill('random baseline', Math.log(vocab_size).toFixed(2), '#ef4444')}
+          ${pill('perfect', '0.0', 'var(--green)')}
+        </div>
+        <p><strong style="color:var(--text)">p=1.0</strong> → model is certain → loss=0</p>
+        <p><strong style="color:var(--text)">p=1/${vocab_size}</strong> → random guess → loss≈${Math.log(vocab_size).toFixed(2)}</p>
+        <p><strong style="color:var(--text)">p≈0</strong> → completely wrong → loss→∞</p>
+        <br>
+        <p style="color:#475569">Training started at ~3.3 (random). The model is learning when this number falls. Each backward pass nudges every parameter to make the correct token more likely next time.</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+function detailBackward(sd) {
+  const doc = sd.doc || '';
+  const gradRms = sd.grad_rms || 0;
+  return `<div class="card" style="border-color:var(--accent)">
+    ${detailHeader('Backpropagation', 'Chain rule in reverse through the computation graph', sd)}
+    <div class="grid2" style="gap:20px">
+      <div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px">The Value autograd engine builds a graph of every operation. <code style="color:var(--accent2)">loss.backward()</code> walks it in reverse:</div>
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:14px;font-family:monospace;font-size:11px;line-height:2.2">
+          <div><span style="color:var(--accent2)">loss</span>.grad = <span style="color:var(--green)">1.0</span> <span style="color:#475569">← ∂L/∂L = 1</span></div>
+          <div style="color:#475569;font-size:10px">↓ reverse topo order</div>
+          <div><span style="color:var(--muted)">child</span>.grad += local_grad × parent.grad</div>
+          <div style="color:#475569;font-size:10px">↓ for every node back to params</div>
+          <div><span style="color:var(--accent2)">param</span>.grad = <span style="color:var(--text)">∂loss/∂param</span></div>
+        </div>
+        <div style="margin-top:12px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Local gradient rules</div>
+        <div style="font-size:11px;line-height:2.1">
+          ${[['a + b','1 , 1'],['a × b','b , a'],['aⁿ','n·aⁿ⁻¹'],['log(a)','1/a'],['exp(a)','eᵃ'],['relu(a)','1 if a>0 else 0']]
+            .map(([op,g]) => `<div style="display:flex;gap:10px">
+              <span style="color:var(--accent2);min-width:56px">${op}</span>
+              <span style="color:var(--muted)">→ ${g}</span>
+            </div>`).join('')}
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.9">
+        ${gradRms > 0 ? `<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:14px">
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Live — step ${sd.step}</div>
+          ${pill('grad RMS', gradRms, 'var(--accent2)')}
+          <div style="font-size:10px;color:#475569;margin-top:6px">RMS of ∂loss/∂param across all ${sd.num_params?.toLocaleString()} parameters after this step's backward pass.</div>
+        </div>` : ''}
+        <p><strong style="color:var(--text)">Why +=?</strong> A Value used in multiple branches accumulates gradients from each path — that's the multivariable chain rule.</p>
+        <br>
+        <p><strong style="color:var(--text)">Reverse topo order</strong> ensures every parent's gradient is complete before it propagates to children.</p>
+        <br>
+        <p><strong style="color:var(--text)">This step:</strong> backward() walked the full graph for <strong style="color:var(--text)">"${doc}"</strong>, computing ∂loss/∂p for all ${sd.num_params?.toLocaleString()} parameters.</p>
+        <br>
+        <p style="color:#475569">Identical algorithm to PyTorch's .backward() — just scalars instead of tensors.</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+function detailAdam(sd) {
+  const step  = sd.step || 0;
+  const lr_t  = sd.lr   || (0.01 * (1 - step / (sd.num_steps || 1000)));
+  const mRms  = sd.m_rms || 0;
+  const vRms  = sd.v_rms || 0;
+  return `<div class="card" style="border-color:var(--accent)">
+    ${detailHeader('Adam Optimizer', 'Adaptive moment estimation — smarter than plain SGD', sd)}
+    <div class="grid2" style="gap:20px">
+      <div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px">For each of the ${sd.num_params?.toLocaleString()} parameters, every step:</div>
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:14px;font-family:monospace;font-size:11px;line-height:2.2">
+          <div style="color:#475569">// 1. momentum — smoothed gradient</div>
+          <div><span style="color:var(--accent2)">m</span> = 0.85·m + 0.15·<span style="color:var(--text)">grad</span></div>
+          <div style="color:#475569">// 2. velocity — smoothed grad²</div>
+          <div><span style="color:var(--accent2)">v</span> = 0.99·v + 0.01·<span style="color:var(--text)">grad²</span></div>
+          <div style="color:#475569">// 3. bias correction</div>
+          <div><span style="color:var(--accent2)">m̂</span> = m / (1 − 0.85<sup>t</sup>)</div>
+          <div><span style="color:var(--accent2)">v̂</span> = v / (1 − 0.99<sup>t</sup>)</div>
+          <div style="color:#475569">// 4. update</div>
+          <div><span style="color:var(--text)">param</span> −= <span style="color:var(--accent2)">lr_t</span> · m̂ / (√v̂ + 1e-8)</div>
+          <div><span style="color:var(--text)">param</span>.grad = <span style="color:#22c55e">0</span> <span style="color:#475569">← reset</span></div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.9">
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:14px">
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Live values — step ${step}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${pill('lr₀', '0.01')}${pill('β₁', '0.85')}${pill('β₂', '0.99')}${pill('ε', '1e-8')}
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+            ${pill('lr_t now', lr_t.toFixed ? lr_t.toFixed(5) : lr_t, 'var(--green)')}
+            ${mRms ? pill('|m| RMS', mRms, 'var(--accent2)') : ''}
+            ${vRms ? pill('|v| RMS', vRms, '#f59e0b') : ''}
+          </div>
+        </div>
+        <p><strong style="color:var(--text)">m (momentum)</strong> smooths gradient direction — like a ball rolling downhill, resists sudden reversals.</p>
+        <br>
+        <p><strong style="color:var(--text)">v (velocity)</strong> scales updates per-parameter. High-variance parameters get smaller steps.</p>
+        <br>
+        <p><strong style="color:var(--text)">Linear LR decay</strong>: lr × (1 − t/T). Starts at 0.01, decays to 0. Lets the model settle toward the end.</p>
+        <br>
+        <p style="color:#475569">Bias correction (m̂, v̂) compensates for m and v being initialised at 0 — without it, early steps would be too small.</p>
+      </div>
+    </div>
+  </div>`;
 }
 
 function stageMapFromActive(activeStage, nodes) {
@@ -217,8 +808,8 @@ function stageMapFromActive(activeStage, nodes) {
 // ── Train tab ─────────────────────────────────────────────────────────────────
 document.getElementById('tab-train').innerHTML = `
 <div class="card">
-  <h2>Pipeline</h2>
-  <svg id="pipeline-svg" viewBox="0 0 760 80" style="width:100%;overflow:visible" xmlns="http://www.w3.org/2000/svg">
+  <h2>Pipeline <span style="color:var(--muted);font-weight:400;font-size:10px;margin-left:6px">click any node to inspect</span></h2>
+  <svg id="pipeline-svg" viewBox="0 0 760 80" style="width:100%;overflow:visible;cursor:pointer" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <filter id="glow">
         <feGaussianBlur stdDeviation="3" result="blur"/>
@@ -238,6 +829,7 @@ document.getElementById('tab-train').innerHTML = `
     </defs>
   </svg>
 </div>
+<div id="node-detail-panel" style="display:none"></div>
 <div class="card flex-row">
   <button class="btn btn-primary" id="btn-start" onclick="startTraining()">▶ Start Training</button>
   <button class="btn btn-danger" id="btn-stop" onclick="stopTraining()" style="display:none">■ Stop</button>
@@ -247,7 +839,7 @@ document.getElementById('tab-train').innerHTML = `
 // initial idle render (after DOM is ready)
 setTimeout(() => {
   const svg = document.getElementById('pipeline-svg');
-  if (svg) renderPipeline(svg, PIPELINE_NODES, {});
+  if (svg) renderPipeline(svg, PIPELINE_NODES, {}, true);
 }, 50);
 
 async function startTraining() {
@@ -263,6 +855,16 @@ async function startTraining() {
   document.getElementById('btn-start').style.display = 'none';
   document.getElementById('btn-stop').style.display = 'inline-flex';
   document.getElementById('train-status').textContent = `${data.num_params.toLocaleString()} params`;
+  // reset chart for fresh run
+  if (lossChart) {
+    lossChart.data.labels = [];
+    lossChart.data.datasets[0].data = [];
+    lossChart.data.datasets[1].data = [];
+    lossChart.data.datasets[2].data = [];
+    lossChart.update('none');
+  }
+  const samplesLog = document.getElementById('samples-log');
+  if (samplesLog) samplesLog.innerHTML = '<div style="color:var(--muted)">Samples appear every 100 steps…</div>';
   startSSE();
 }
 
@@ -285,7 +887,17 @@ document.getElementById('tab-report').innerHTML = `
     </div>
   </div>
   <div class="card">
-    <h2>Loss Curve</h2>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <h2 style="margin-bottom:0">Loss Curve</h2>
+      <div style="display:flex;gap:14px;font-size:11px;color:var(--muted)">
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
+          <input type="checkbox" id="chk-trend" onchange="updateOverlays()" style="width:auto;accent-color:#f59e0b"> Trendline
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
+          <input type="checkbox" id="chk-ma" onchange="updateOverlays()" style="width:auto;accent-color:#22c55e"> Moving avg
+        </label>
+      </div>
+    </div>
     <canvas id="loss-chart" height="140"></canvas>
   </div>
 </div>
@@ -305,15 +917,11 @@ function initChart() {
     type: 'line',
     data: {
       labels: [],
-      datasets: [{
-        label: 'loss',
-        data: [],
-        borderColor: '#6366f1',
-        backgroundColor: 'rgba(99,102,241,0.08)',
-        borderWidth: 2,
-        pointRadius: 0,
-        tension: 0.3
-      }]
+      datasets: [
+        { label: 'loss',        data: [], borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.08)', borderWidth: 2, pointRadius: 0, tension: 0.3 },
+        { label: 'trendline',   data: [], borderColor: '#f59e0b', borderWidth: 1.5, borderDash: [6,3], pointRadius: 0, tension: 0, hidden: true },
+        { label: 'moving avg',  data: [], borderColor: '#22c55e', borderWidth: 1.5, pointRadius: 0, tension: 0.4, hidden: true },
+      ]
     },
     options: {
       animation: false,
@@ -326,6 +934,35 @@ function initChart() {
   });
 }
 setTimeout(initChart, 100);
+
+function _linearTrend(ys) {
+  const n = ys.length;
+  if (n < 2) return ys.map(() => null);
+  let sx = 0, sy = 0, sxy = 0, sxx = 0;
+  for (let i = 0; i < n; i++) { sx += i; sy += ys[i]; sxy += i * ys[i]; sxx += i * i; }
+  const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+  const intercept = (sy - slope * sx) / n;
+  return ys.map((_, i) => intercept + slope * i);
+}
+
+function _movingAvg(ys, w = 20) {
+  return ys.map((_, i) => {
+    const slice = ys.slice(Math.max(0, i - w + 1), i + 1);
+    return slice.reduce((a, b) => a + b, 0) / slice.length;
+  });
+}
+
+function updateOverlays() {
+  if (!lossChart) return;
+  const raw = lossChart.data.datasets[0].data;
+  const showTrend = document.getElementById('chk-trend')?.checked;
+  const showMA    = document.getElementById('chk-ma')?.checked;
+  lossChart.data.datasets[1].data   = showTrend ? _linearTrend(raw) : [];
+  lossChart.data.datasets[1].hidden = !showTrend;
+  lossChart.data.datasets[2].data   = showMA    ? _movingAvg(raw)   : [];
+  lossChart.data.datasets[2].hidden = !showMA;
+  lossChart.update('none');
+}
 
 // ── Infer tab ─────────────────────────────────────────────────────────────────
 document.getElementById('tab-infer').innerHTML = `
@@ -348,9 +985,11 @@ document.getElementById('tab-infer').innerHTML = `
   <button class="btn btn-primary" onclick="generate()">✦ Generate</button>
 </div>
 <div class="card" id="infer-output" style="display:none">
-  <h2>Output</h2>
-  <div class="names-grid" id="names-grid"></div>
+  <h2>History</h2>
+  <div id="infer-history"></div>
 </div>`;
+
+let _inferRunCount = 0;
 
 async function generate() {
   const temperature = parseFloat(document.getElementById('infer-temp').value);
@@ -362,9 +1001,29 @@ async function generate() {
   });
   const data = await res.json();
   if (data.error) { alert(data.error); return; }
+
+  _inferRunCount++;
+  const uid = `run-${String(_inferRunCount).padStart(3, '0')}`;
+  const ts = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  const stateRes = await fetch('/state');
+  const st = await stateRes.json();
+  const steps = (st.step || 0).toLocaleString();
+  const total = (st.num_steps || '?').toLocaleString();
+  const lossLabel = st.loss != null && st.loss > 0 ? st.loss.toFixed(4) : '—';
+
+  const entry = document.createElement('div');
+  entry.className = 'infer-entry';
+  entry.innerHTML = `
+    <div class="infer-entry-header">
+      <span class="infer-uid">#${uid}</span>
+      <span class="infer-meta">step ${steps} / ${total}</span>
+      <span class="infer-meta">T=${temperature.toFixed(2)}</span>
+      <span class="infer-meta" style="color:var(--accent2)">loss ${lossLabel}</span>
+      <span class="infer-ts">${ts}</span>
+    </div>
+    <div class="names-grid" style="margin-top:10px">${data.samples.map(s => `<div class="name-card">${s}</div>`).join('')}</div>`;
+  document.getElementById('infer-history').prepend(entry);
   document.getElementById('infer-output').style.display = 'block';
-  document.getElementById('names-grid').innerHTML =
-    data.samples.map(s => `<div class="name-card">${s}</div>`).join('');
 }
 
 // ── SSE listener ──────────────────────────────────────────────────────────────
@@ -381,7 +1040,7 @@ function startSSE() {
     if (msg.type === 'step') {
       // pipeline graph
       const pSvg = document.getElementById('pipeline-svg');
-      if (pSvg) renderPipeline(pSvg, PIPELINE_NODES, stageMapFromActive(msg.stage, PIPELINE_NODES));
+      if (pSvg) renderPipeline(pSvg, PIPELINE_NODES, stageMapFromActive(msg.stage, PIPELINE_NODES), true);
 
       // GPT subgraph
       const subCard = document.getElementById('gpt-subgraph-card');
@@ -408,7 +1067,7 @@ function startSSE() {
           lossChart.data.labels.shift();
           lossChart.data.datasets[0].data.shift();
         }
-        lossChart.update('none');
+        updateOverlays();
       }
 
       // mid-training samples
@@ -432,7 +1091,7 @@ function startSSE() {
       const statusEl = document.getElementById('train-status');
       if (statusEl) statusEl.textContent = 'done';
       const pSvg = document.getElementById('pipeline-svg');
-      if (pSvg) renderPipeline(pSvg, PIPELINE_NODES, Object.fromEntries(PIPELINE_NODES.map(n => [n.id, 'done'])));
+      if (pSvg) renderPipeline(pSvg, PIPELINE_NODES, Object.fromEntries(PIPELINE_NODES.map(n => [n.id, 'done'])), true);
     }
   };
 }
@@ -469,7 +1128,7 @@ fetch('/state').then(r => r.json()).then(s => {
       if (!lossChart) return;
       lossChart.data.labels = s.losses.map(l => l.step);
       lossChart.data.datasets[0].data = s.losses.map(l => l.loss);
-      lossChart.update('none');
+      updateOverlays();
     }, 200);
   }
   // restore samples log

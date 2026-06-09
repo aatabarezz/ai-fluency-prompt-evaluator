@@ -940,7 +940,10 @@ select#model:focus { border-color: var(--coral); }
         <div class="response-card">
           <div class="card-header">
             <span class="card-label">Rewritten</span>
-            <div id="technique-badge" class="technique-badge"></div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div id="technique-badge" class="technique-badge"></div>
+              <div id="opt-score-badge" style="display:none;font-size:13px;font-weight:600;padding:2px 8px;border-radius:12px;background:var(--cream-mid,#e8e3d9)"></div>
+            </div>
           </div>
           <div id="optimized-prompt-box" class="optimized-prompt-box"></div>
           <div id="right-tools"></div>
@@ -977,9 +980,14 @@ select#model:focus { border-color: var(--coral); }
           <th>Model</th>
           <th>Prompt</th>
           <th>Score</th>
+          <th>Prompt Tokens</th>
+          <th>Response Tokens</th>
           <th>Technique</th>
+          <th>Opt Score</th>
+          <th>Opt Prompt Tokens</th>
+          <th>Opt Response Tokens</th>
           <th>Preference</th>
-          <th>Tokens</th>
+          <th>Total Tokens</th>
         </tr>
       </thead>
       <tbody id="archive-body"></tbody>
@@ -1138,6 +1146,7 @@ async function runEval() {
   document.getElementById('right-tools').innerHTML  = '';
   document.getElementById('right-response').textContent = '';
   document.getElementById('technique-badge').style.display      = 'none';
+  document.getElementById('opt-score-badge').style.display      = 'none';
   document.getElementById('optimized-prompt-box').style.display = 'none';
   document.querySelectorAll('.pref-btn').forEach(b => b.classList.remove('selected'));
 
@@ -1179,10 +1188,11 @@ async function runEval() {
 
 function handleSSE(event, data) {
   const statusMsgs = {
-    scoring:    'Scoring your prompt…',
-    left:       'Generating original response…',
-    optimizing: 'Optimizing your prompt…',
-    right:      'Running optimized prompt…'
+    scoring:           'Scoring your prompt…',
+    left:              'Generating original response…',
+    optimizing:        'Optimizing your prompt…',
+    right:             'Running optimized prompt…',
+    scoring_optimized: 'Scoring optimized prompt…'
   };
 
   if (event === 'status') {
@@ -1229,6 +1239,14 @@ function handleSSE(event, data) {
     const box = document.getElementById('optimized-prompt-box');
     box.textContent = data.optimized_prompt || '';
     box.style.display = 'block';
+
+  } else if (event === 'optimized_score') {
+    const os = data.score ?? 0;
+    const oc = os >= 7 ? 'var(--green)' : os >= 4 ? 'var(--amber)' : 'var(--red)';
+    const badge = document.getElementById('opt-score-badge');
+    badge.textContent = os + '/10';
+    badge.style.color = oc;
+    badge.style.display = 'inline-block';
 
   } else if (event === 'right') {
     renderTools('right-tools', data.tools);
@@ -1278,13 +1296,18 @@ async function loadArchive() {
         <td>${escHtml((r.model || '').replace('claude-', ''))}</td>
         <td>${escHtml(r.prompt_preview || '')}${(r.prompt_preview || '').length >= 80 ? '…' : ''}</td>
         <td><span class="score-pill">${r.score ?? '—'}/10</span></td>
+        <td style="font-size:12px;color:var(--ink-muted)">${r.orig_tokens_in != null ? r.orig_tokens_in.toLocaleString() : '—'}</td>
+        <td style="font-size:12px;color:var(--ink-muted)">${r.orig_tokens_out != null ? r.orig_tokens_out.toLocaleString() : '—'}</td>
         <td style="font-size:12px">${escHtml(r.optimized_technique || '—')}</td>
+        <td>${r.optimized_score != null ? `<span class="score-pill">${r.optimized_score}/10</span>` : '—'}</td>
+        <td style="font-size:12px;color:var(--ink-muted)">${r.opt_tokens_in != null ? r.opt_tokens_in.toLocaleString() : '—'}</td>
+        <td style="font-size:12px;color:var(--ink-muted)">${r.opt_tokens_out != null ? r.opt_tokens_out.toLocaleString() : '—'}</td>
         <td>${r.preference ? `<span class="pref-pill">${escHtml(r.preference)}</span>` : '—'}</td>
         <td>${(r.tokens_total || 0).toLocaleString()}</td>
       </tr>`).join('');
   } catch (e) {
     document.getElementById('archive-body').innerHTML =
-      `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--ink-muted)">Failed to load archive</td></tr>`;
+      `<tr><td colspan="13" style="text-align:center;padding:24px;color:var(--ink-muted)">Failed to load archive</td></tr>`;
   }
 }
 
@@ -1299,7 +1322,7 @@ window.toggleDetail = async (id, tr) => {
     const detail = document.createElement('tr');
     detail.id        = 'detail-' + id;
     detail.className = 'detail-row';
-    detail.innerHTML = `<td colspan="8">
+    detail.innerHTML = `<td colspan="13">
       <div class="detail-grid">
         <div><strong>Original Prompt</strong><pre>${escHtml(d.original_prompt || '')}</pre></div>
         <div><strong>Optimized Prompt — ${escHtml(d.optimized_technique || '')}</strong><pre>${escHtml(d.optimized_prompt || '')}</pre></div>

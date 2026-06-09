@@ -35,13 +35,25 @@ def init_db():
             score_good TEXT, score_bad TEXT, score_fix TEXT,
             left_response TEXT, left_tools_log TEXT,
             optimized_prompt TEXT, optimized_technique TEXT,
+            optimized_score INTEGER,
             right_response TEXT, right_tools_log TEXT,
             preference TEXT,
             attachments TEXT,
             tokens_input INTEGER DEFAULT 0,
             tokens_output INTEGER DEFAULT 0,
-            tokens_total INTEGER DEFAULT 0
+            tokens_total INTEGER DEFAULT 0,
+            orig_tokens_in INTEGER DEFAULT 0,
+            orig_tokens_out INTEGER DEFAULT 0,
+            opt_tokens_in INTEGER DEFAULT 0,
+            opt_tokens_out INTEGER DEFAULT 0
         )""")
+        for col in ["optimized_score INTEGER", "orig_tokens_in INTEGER DEFAULT 0",
+                    "orig_tokens_out INTEGER DEFAULT 0", "opt_tokens_in INTEGER DEFAULT 0",
+                    "opt_tokens_out INTEGER DEFAULT 0"]:
+            try:
+                con.execute(f"ALTER TABLE sessions ADD COLUMN {col}")
+            except Exception:
+                pass
 
 init_db()
 
@@ -227,6 +239,9 @@ async def evaluate(request: Request):
             left_text, left_tools, left_usage = claude_call_with_tools(model, left_msgs)
             total_input += left_usage["input_tokens"]
             total_output += left_usage["output_tokens"]
+            # orig_tokens = just the prompt-response call (no system prompt overhead)
+            orig_in  = left_usage["input_tokens"]
+            orig_out = left_usage["output_tokens"]
             session["left_response"] = left_text
             session["left_tools_log"] = json.dumps(left_tools)
             yield sse("left", {"response": left_text, "tools": left_tools})
@@ -285,14 +300,39 @@ async def evaluate(request: Request):
             right_text, right_tools, right_usage = claude_call_with_tools(model, right_msgs)
             total_input += right_usage["input_tokens"]
             total_output += right_usage["output_tokens"]
+            # opt_tokens = just the optimized-prompt response call (no system prompt overhead)
+            opt_in  = right_usage["input_tokens"]
+            opt_out = right_usage["output_tokens"]
             session["right_response"] = right_text
             session["right_tools_log"] = json.dumps(right_tools)
             yield sse("right", {"response": right_text, "tools": right_tools})
+
+            # CALL 5: Score the optimized prompt
+            yield sse("status", {"phase": "scoring_optimized"})
+            opt_score_text, _, opt_score_usage = claude_call_with_tools(
+                model,
+                [{"role": "user", "content": opt_data.get("optimized_prompt", prompt)}],
+                system=score_system,
+                use_tools=False
+            )
+            total_input  += opt_score_usage["input_tokens"]
+            total_output += opt_score_usage["output_tokens"]
+            try:
+                opt_score_data = json.loads(opt_score_text.strip())
+            except Exception:
+                m = re.search(r'\{.*\}', opt_score_text, re.DOTALL)
+                opt_score_data = json.loads(m.group()) if m else {"score": 5, "good": "", "bad": "", "fix": ""}
+            session["optimized_score"] = opt_score_data.get("score")
+            yield sse("optimized_score", opt_score_data)
 
             # Save to DB
             session["tokens_input"] = total_input
             session["tokens_output"] = total_output
             session["tokens_total"] = total_input + total_output
+            session["orig_tokens_in"]  = orig_in
+            session["orig_tokens_out"] = orig_out
+            session["opt_tokens_in"]   = opt_in
+            session["opt_tokens_out"]  = opt_out
             cols = ",".join(session.keys())
             placeholders = ",".join(["?"] * len(session))
             with sqlite3.connect(DB) as con:
@@ -334,7 +374,8 @@ async def archive_list(page: int = 1, per_page: int = 20):
         rows = con.execute("""
             SELECT id, created_at, model,
                    substr(original_prompt, 1, 80) as prompt_preview,
-                   score, optimized_technique, preference,
+                   score, optimized_score, optimized_technique, preference,
+                   orig_tokens_in, orig_tokens_out, opt_tokens_in, opt_tokens_out,
                    tokens_total
             FROM sessions ORDER BY id DESC LIMIT ? OFFSET ?
         """, (per_page, offset)).fetchall()

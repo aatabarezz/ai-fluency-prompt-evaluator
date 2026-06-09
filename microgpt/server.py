@@ -68,6 +68,17 @@ class TrainState:
     num_params: int = 0
     start_time: float = 0.0
     events: list = field(default_factory=list)
+    # live per-step data for the explain panels
+    live_doc: str = ""
+    live_tokens: list = field(default_factory=list)
+    live_logits_top: list = field(default_factory=list)   # top-5 [{token, id, prob, logit}]
+    live_target_token: str = ""
+    live_target_prob: float = 0.0
+    live_loss_val: float = 0.0
+    live_grad_rms: float = 0.0
+    live_lr: float = 0.01
+    live_m_rms: float = 0.0
+    live_v_rms: float = 0.0
 
 
 _state = TrainState()
@@ -183,26 +194,55 @@ def _train_thread(state: TrainState):
         doc = state.docs[step % len(state.docs)]
         tokens = [state.BOS] + [state.uchars.index(ch) for ch in doc] + [state.BOS]
         n = min(state.block_size, len(tokens) - 1)
+        state.live_doc = doc
+        state.live_tokens = tokens
+
+        state.stage = "tokenizer"
         state.stage = "forward"
         keys = [[] for _ in range(state.n_layer)]
         values = [[] for _ in range(state.n_layer)]
         losses_t = []
+        last_logits = None
+        last_probs = None
+        last_target = None
         for pos_id in range(n):
             token_id, target_id = tokens[pos_id], tokens[pos_id + 1]
             logits = _gpt(token_id, pos_id, keys, values, state)
             probs = _softmax(logits)
             loss_t = -probs[target_id].log()
             losses_t.append(loss_t)
+            last_logits = logits
+            last_probs = probs
+            last_target = target_id
+        # store top-5 predictions from last position
+        if last_probs and last_logits:
+            ranked = sorted(range(len(last_probs)), key=lambda i: last_probs[i].data, reverse=True)[:5]
+            state.live_logits_top = [
+                {"token": state.uchars[i] if i < len(state.uchars) else "BOS",
+                 "id": i, "prob": round(last_probs[i].data, 4),
+                 "logit": round(last_logits[i].data, 3)}
+                for i in ranked
+            ]
+            target_label = state.uchars[last_target] if last_target < len(state.uchars) else "BOS"
+            state.live_target_token = target_label
+            state.live_target_prob = round(last_probs[last_target].data, 4)
+
         state.stage = "loss"
         loss = (1 / n) * sum(losses_t)
         state.loss = loss.data
+        state.live_loss_val = loss.data
         if loss.data < state.best_loss:
             state.best_loss = loss.data
         state.losses.append({"step": step + 1, "loss": round(loss.data, 4)})
+
         state.stage = "backward"
         loss.backward()
+        grad_sq = sum(p.grad ** 2 for p in state.params)
+        state.live_grad_rms = round((grad_sq / len(state.params)) ** 0.5, 6)
+
         state.stage = "adam"
         lr_t = lr * (1 - step / state.num_steps)
+        state.live_lr = round(lr_t, 6)
         for i, p in enumerate(state.params):
             state.m[i] = beta1 * state.m[i] + (1 - beta1) * p.grad
             state.v_buf[i] = beta2 * state.v_buf[i] + (1 - beta2) * p.grad ** 2
@@ -210,6 +250,9 @@ def _train_thread(state: TrainState):
             v_hat = state.v_buf[i] / (1 - beta2 ** (step + 1))
             p.data -= lr_t * m_hat / (v_hat ** 0.5 + eps)
             p.grad = 0
+        if state.m:
+            state.live_m_rms = round((sum(x**2 for x in state.m) / len(state.m))**0.5, 6)
+            state.live_v_rms = round((sum(x**2 for x in state.v_buf) / len(state.v_buf))**0.5, 6)
         state.step = step + 1
         elapsed = time.time() - state.start_time
         eta = (elapsed / state.step) * (state.num_steps - state.step) if state.step > 0 else 0
@@ -316,6 +359,70 @@ def get_state():
             "samples_log": _state.samples_log,
             "num_params": _state.num_params,
             "vocab_size": _state.vocab_size,
+        }
+
+@app.get("/step-data")
+def step_data():
+    with _lock:
+        if not _state.docs:
+            return {"error": "no data loaded"}
+        return {
+            "step": _state.step,
+            "stage": _state.stage,
+            "doc": _state.live_doc,
+            "tokens": _state.live_tokens,
+            "uchars": _state.uchars,
+            "BOS": _state.BOS,
+            "vocab_size": _state.vocab_size,
+            "sample_docs": _state.docs[:8],
+            "n_embd": _state.n_embd,
+            "n_head": _state.n_head,
+            "n_layer": _state.n_layer,
+            "block_size": _state.block_size,
+            "num_params": _state.num_params,
+            "logits_top": _state.live_logits_top,
+            "target_token": _state.live_target_token,
+            "target_prob": _state.live_target_prob,
+            "loss": round(_state.live_loss_val, 4),
+            "grad_rms": _state.live_grad_rms,
+            "lr": _state.live_lr,
+            "m_rms": _state.live_m_rms,
+            "v_rms": _state.live_v_rms,
+        }
+
+@app.get("/sample-data")
+def sample_data():
+    with _lock:
+        if not _state.docs:
+            return {"error": "no data loaded"}
+        # pick a short doc for the tokenizer example
+        example_doc = next((d for d in _state.docs if 3 <= len(d) <= 7), _state.docs[0])
+        tokens = [_state.BOS] + [_state.uchars.index(ch) for ch in example_doc] + [_state.BOS]
+        # softmax over random logits for loss example
+        import math as _math
+        fake_logits = [round(random.gauss(0, 1), 3) for _ in range(_state.vocab_size)]
+        max_l = max(fake_logits)
+        exps = [_math.exp(v - max_l) for v in fake_logits]
+        total = sum(exps)
+        fake_probs = [round(e / total, 4) for e in exps]
+        target_idx = tokens[1] if len(tokens) > 1 else 0
+        return {
+            "example_doc": example_doc,
+            "tokens": tokens,
+            "uchars": _state.uchars,
+            "BOS": _state.BOS,
+            "vocab_size": _state.vocab_size,
+            "sample_docs": _state.docs[:8],
+            "n_embd": _state.n_embd,
+            "n_head": _state.n_head,
+            "n_layer": _state.n_layer,
+            "block_size": _state.block_size,
+            "num_params": _state.num_params,
+            "fake_logits": fake_logits[:_state.vocab_size],
+            "fake_probs": fake_probs,
+            "target_idx": target_idx,
+            "step": _state.step,
+            "loss": round(_state.loss, 4),
         }
 
 @app.post("/infer")
