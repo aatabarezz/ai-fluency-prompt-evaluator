@@ -277,6 +277,65 @@ async def save_preference(session_id: int, request: Request):
     return {"ok": True}
 
 
+@app.get("/archive")
+async def archive_list(page: int = 1, per_page: int = 20):
+    offset = (page - 1) * per_page
+    with sqlite3.connect(DB) as con:
+        con.row_factory = sqlite3.Row
+        rows = con.execute("""
+            SELECT id, created_at, model,
+                   substr(original_prompt, 1, 80) as prompt_preview,
+                   score, optimized_technique, preference,
+                   tokens_total
+            FROM sessions ORDER BY id DESC LIMIT ? OFFSET ?
+        """, (per_page, offset)).fetchall()
+        total = con.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+    return {"total": total, "page": page, "per_page": per_page,
+            "rows": [dict(r) for r in rows]}
+
+
+@app.get("/archive/export")
+async def archive_export(ids: str = ""):
+    with sqlite3.connect(DB) as con:
+        con.row_factory = sqlite3.Row
+        if ids:
+            id_list = [int(i) for i in ids.split(",") if i.strip().isdigit()]
+            placeholders = ",".join("?" * len(id_list))
+            rows = con.execute(
+                f"SELECT * FROM sessions WHERE id IN ({placeholders})", id_list
+            ).fetchall()
+        else:
+            rows = con.execute("SELECT * FROM sessions ORDER BY id DESC").fetchall()
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sessions"
+    if rows:
+        ws.append(list(rows[0].keys()))
+        for row in rows:
+            ws.append(list(row))
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=prompt_sessions.xlsx"}
+    )
+
+
+@app.get("/archive/{session_id}")
+async def archive_detail(session_id: int):
+    with sqlite3.connect(DB) as con:
+        con.row_factory = sqlite3.Row
+        row = con.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
+    if not row:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Session not found")
+    return dict(row)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return Path(__file__).parent.joinpath("index.html").read_text()
