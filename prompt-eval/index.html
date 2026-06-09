@@ -715,9 +715,160 @@ select#model:focus { border-color: var(--coral); }
 
 /* ── Input file hidden ─────────────────────────────────────────── */
 #file-input { display: none; }
+
+/* ── Auth overlay ──────────────────────────────────────────────── */
+#auth-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: var(--cream);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  animation: fade-up .4s ease both;
+}
+
+#auth-overlay.visible { display: flex; }
+
+.auth-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 40px 44px;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: var(--shadow-md);
+  text-align: center;
+}
+
+.auth-asterisk {
+  font-size: 40px;
+  color: var(--coral);
+  display: block;
+  margin-bottom: 16px;
+  animation: spin-in .6s cubic-bezier(.34,1.56,.64,1) both;
+}
+
+.auth-title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.auth-sub {
+  font-size: 13px;
+  color: var(--ink-muted);
+  margin-bottom: 28px;
+  line-height: 1.6;
+}
+
+.auth-sub a {
+  color: var(--coral);
+  text-decoration: none;
+}
+
+.auth-sub a:hover { text-decoration: underline; }
+
+.auth-input-wrap {
+  position: relative;
+  margin-bottom: 12px;
+}
+
+#api-key-input {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 13px;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+  letter-spacing: .04em;
+}
+
+#api-key-input:focus {
+  border-color: var(--coral);
+  box-shadow: 0 0 0 3px rgba(212,117,90,.12);
+}
+
+#api-key-input::placeholder { color: var(--ink-muted); letter-spacing: 0; }
+
+#auth-save-btn {
+  width: 100%;
+  padding: 11px;
+  background: var(--coral);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s, box-shadow .15s;
+  box-shadow: 0 2px 8px rgba(212,117,90,.3);
+  margin-bottom: 14px;
+}
+
+#auth-save-btn:hover { background: var(--coral-dark); }
+#auth-save-btn:disabled { opacity: .5; cursor: default; }
+
+.auth-error {
+  display: none;
+  font-size: 12px;
+  color: var(--red);
+  margin-bottom: 10px;
+}
+
+.auth-note {
+  font-size: 11px;
+  color: var(--ink-muted);
+  line-height: 1.6;
+}
+
+/* key badge in header */
+.key-badge {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ink-muted);
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  transition: all .15s;
+  margin-top: 10px;
+}
+
+.key-badge:hover { border-color: var(--red); color: var(--red); }
+.key-badge.visible { display: inline-flex; }
+.key-dot { width: 6px; height: 6px; background: var(--green); border-radius: 50%; }
 </style>
 </head>
 <body>
+
+<!-- Auth overlay -->
+<div id="auth-overlay">
+  <div class="auth-box">
+    <span class="auth-asterisk">✳</span>
+    <div class="auth-title">Connect your API key</div>
+    <p class="auth-sub">
+      Enter your <a href="https://console.anthropic.com/settings/keys" target="_blank">Anthropic API key</a>
+      to start evaluating prompts. It's stored locally on this machine only.
+    </p>
+    <div class="auth-input-wrap">
+      <input id="api-key-input" type="password" placeholder="sk-ant-api03-…" autocomplete="off" spellcheck="false">
+    </div>
+    <div id="auth-error" class="auth-error"></div>
+    <button id="auth-save-btn">Save &amp; Continue →</button>
+    <p class="auth-note">Your key is saved to a local file and never sent anywhere except Anthropic's API.</p>
+  </div>
+</div>
 
 <header class="site-header">
   <div class="site-header-inner">
@@ -726,6 +877,11 @@ select#model:focus { border-color: var(--coral); }
       <span class="site-title-top">AI Fluency</span>
       <span class="site-title-main">Prompt Evaluator</span>
     </div>
+  </div>
+  <div id="key-badge" class="key-badge" title="Click to remove API key">
+    <span class="key-dot"></span>
+    <span id="key-masked"></span>
+    <span>· remove</span>
   </div>
 </header>
 
@@ -834,6 +990,64 @@ select#model:focus { border-color: var(--coral); }
 <input type="file" id="file-input" multiple accept="image/*,audio/*,video/*">
 
 <script>
+// ── Auth ─────────────────────────────────────────────────────────
+async function checkAuth() {
+  const res  = await fetch('/config/status').then(r => r.json());
+  const overlay = document.getElementById('auth-overlay');
+  const badge   = document.getElementById('key-badge');
+  const masked  = document.getElementById('key-masked');
+  if (res.has_key) {
+    overlay.classList.remove('visible');
+    badge.classList.add('visible');
+    masked.textContent = res.masked;
+  } else {
+    overlay.classList.add('visible');
+    badge.classList.remove('visible');
+  }
+}
+
+document.getElementById('auth-save-btn').addEventListener('click', async () => {
+  const key = document.getElementById('api-key-input').value.trim();
+  const err = document.getElementById('auth-error');
+  const btn = document.getElementById('auth-save-btn');
+  err.style.display = 'none';
+  if (!key) { err.textContent = 'Please enter your API key.'; err.style.display = 'block'; return; }
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try {
+    const res = await fetch('/config/key', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({key})
+    });
+    if (!res.ok) {
+      const d = await res.json();
+      err.textContent = d.detail || 'Failed to save key.';
+      err.style.display = 'block';
+    } else {
+      document.getElementById('api-key-input').value = '';
+      await checkAuth();
+    }
+  } catch (e) {
+    err.textContent = 'Connection error.';
+    err.style.display = 'block';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Save & Continue →';
+});
+
+document.getElementById('api-key-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('auth-save-btn').click();
+});
+
+document.getElementById('key-badge').addEventListener('click', async () => {
+  if (!confirm('Remove the saved API key?')) return;
+  await fetch('/config/key', {method: 'DELETE'});
+  await checkAuth();
+});
+
+checkAuth();
+
 // ── Tab switching ────────────────────────────────────────────────
 document.querySelectorAll('.tab').forEach(btn => {
   btn.addEventListener('click', () => {

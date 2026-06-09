@@ -6,7 +6,23 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 import anthropic, openpyxl, httpx
 
 app = FastAPI()
-DB = os.path.join(os.path.dirname(__file__), "sessions.db")
+BASE = Path(__file__).parent
+DB = str(BASE / "sessions.db")
+KEY_FILE = BASE / ".api_key"
+
+def load_api_key() -> str | None:
+    """Load key from env, then fallback to .api_key file."""
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if key:
+        return key
+    if KEY_FILE.exists():
+        key = KEY_FILE.read_text().strip()
+        if key:
+            os.environ["ANTHROPIC_API_KEY"] = key
+            return key
+    return None
+
+load_api_key()
 
 def init_db():
     with sqlite3.connect(DB) as con:
@@ -91,7 +107,11 @@ def dispatch_tool(name: str, inputs: dict) -> str:
     return "Unknown tool"
 
 
-client = anthropic.Anthropic()
+def get_client() -> anthropic.Anthropic:
+    key = load_api_key()
+    if not key:
+        raise RuntimeError("ANTHROPIC_API_KEY not set")
+    return anthropic.Anthropic(api_key=key)
 
 
 def claude_call_with_tools(model: str, messages: list, system: str = "") -> tuple[str, list, dict]:
@@ -103,7 +123,7 @@ def claude_call_with_tools(model: str, messages: list, system: str = "") -> tupl
         kwargs["system"] = system
 
     for _ in range(10):
-        response = client.messages.create(**kwargs)
+        response = get_client().messages.create(**kwargs)
         usage["input_tokens"] += response.usage.input_tokens
         usage["output_tokens"] += response.usage.output_tokens
         text_parts = [b.text for b in response.content if hasattr(b, "text")]
@@ -335,6 +355,29 @@ async def archive_detail(session_id: int):
         raise HTTPException(status_code=404, detail="Session not found")
     return dict(row)
 
+
+@app.get("/config/status")
+async def config_status():
+    key = load_api_key()
+    return {"has_key": bool(key), "masked": ("sk-ant-..." + key[-4:]) if key else None}
+
+@app.post("/config/key")
+async def config_set_key(request: Request):
+    body = await request.json()
+    key = (body.get("key") or "").strip()
+    if not key.startswith("sk-ant-"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Invalid key format — must start with sk-ant-")
+    KEY_FILE.write_text(key)
+    os.environ["ANTHROPIC_API_KEY"] = key
+    return {"ok": True}
+
+@app.delete("/config/key")
+async def config_delete_key():
+    if KEY_FILE.exists():
+        KEY_FILE.unlink()
+    os.environ.pop("ANTHROPIC_API_KEY", None)
+    return {"ok": True}
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
