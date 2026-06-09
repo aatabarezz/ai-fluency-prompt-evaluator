@@ -91,6 +91,190 @@ def dispatch_tool(name: str, inputs: dict) -> str:
     return "Unknown tool"
 
 
+client = anthropic.Anthropic()
+
+
+def claude_call_with_tools(model: str, messages: list, system: str = "") -> tuple[str, list, dict]:
+    """Returns (full_text, tools_log, usage_totals)"""
+    tools_log = []
+    usage = {"input_tokens": 0, "output_tokens": 0}
+    kwargs = {"model": model, "max_tokens": 4096, "messages": messages, "tools": TOOLS}
+    if system:
+        kwargs["system"] = system
+
+    while True:
+        response = client.messages.create(**kwargs)
+        usage["input_tokens"] += response.usage.input_tokens
+        usage["output_tokens"] += response.usage.output_tokens
+        text_parts = [b.text for b in response.content if hasattr(b, "text")]
+        full_text = "".join(text_parts)
+
+        if response.stop_reason == "end_turn":
+            return full_text, tools_log, usage
+
+        if response.stop_reason == "tool_use":
+            tool_uses = [b for b in response.content if b.type == "tool_use"]
+            tool_results = []
+            for tu in tool_uses:
+                result = dispatch_tool(tu.name, tu.input)
+                tools_log.append({"tool": tu.name, "input": tu.input, "output": result})
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tu.id,
+                    "content": result
+                })
+            messages = messages + [
+                {"role": "assistant", "content": response.content},
+                {"role": "user", "content": tool_results}
+            ]
+            kwargs["messages"] = messages
+        else:
+            return full_text, tools_log, usage
+
+
+def sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@app.post("/evaluate")
+async def evaluate(request: Request):
+    body = await request.json()
+    prompt: str = body["prompt"]
+    model: str = body["model"]
+    attachments: list = body.get("attachments", [])
+
+    total_input = total_output = 0
+
+    async def stream():
+        nonlocal total_input, total_output
+        session = {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "model": model,
+            "original_prompt": prompt,
+            "attachments": json.dumps([a["name"] for a in attachments]),
+        }
+
+        # CALL 1: Score
+        yield sse("status", {"phase": "scoring"})
+        score_system = textwrap.dedent("""
+            You are an expert prompt engineer. Evaluate the user's prompt and return ONLY valid JSON:
+            {"score": <1-10>, "good": "<what works>", "bad": "<what doesn't>", "fix": "<how to improve>"}
+            No markdown, no explanation outside the JSON.
+        """).strip()
+        score_text, _, score_usage = claude_call_with_tools(
+            model, [{"role": "user", "content": prompt}], system=score_system
+        )
+        total_input += score_usage["input_tokens"]
+        total_output += score_usage["output_tokens"]
+        try:
+            score_data = json.loads(score_text.strip())
+        except Exception:
+            import re
+            m = re.search(r'\{.*\}', score_text, re.DOTALL)
+            score_data = json.loads(m.group()) if m else {"score": 5, "good": "", "bad": "", "fix": ""}
+        session.update({
+            "score": score_data.get("score"),
+            "score_good": score_data.get("good", ""),
+            "score_bad": score_data.get("bad", ""),
+            "score_fix": score_data.get("fix", ""),
+        })
+        yield sse("score", score_data)
+
+        # CALL 2: Left (original prompt)
+        yield sse("status", {"phase": "left"})
+        content_blocks = []
+        for att in attachments:
+            content_blocks.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": att["type"], "data": att["b64"]}
+            })
+        content_blocks.append({"type": "text", "text": prompt})
+        left_msgs = [{"role": "user", "content": content_blocks if attachments else prompt}]
+        left_text, left_tools, left_usage = claude_call_with_tools(model, left_msgs)
+        total_input += left_usage["input_tokens"]
+        total_output += left_usage["output_tokens"]
+        session["left_response"] = left_text
+        session["left_tools_log"] = json.dumps(left_tools)
+        yield sse("left", {"response": left_text, "tools": left_tools})
+
+        # CALL 3: Optimize prompt
+        yield sse("status", {"phase": "optimizing"})
+        opt_system = textwrap.dedent("""
+            You are an expert prompt engineer. Analyze the given prompt and rewrite it using the most
+            impactful technique(s) from: Zero-shot, Few-shot, Chain-of-Thought, Role, Output Constraints,
+            Step Decomposition, Generate Knowledge, Directional Stimulus.
+            Return ONLY valid JSON:
+            {"technique": "<technique name(s)>", "optimized_prompt": "<full rewritten prompt>"}
+            No markdown, no explanation outside the JSON.
+        """).strip()
+        opt_text, _, opt_usage = claude_call_with_tools(
+            model, [{"role": "user", "content": prompt}], system=opt_system
+        )
+        total_input += opt_usage["input_tokens"]
+        total_output += opt_usage["output_tokens"]
+        try:
+            opt_data = json.loads(opt_text.strip())
+        except Exception:
+            import re
+            m = re.search(r'\{.*\}', opt_text, re.DOTALL)
+            opt_data = json.loads(m.group()) if m else {"technique": "", "optimized_prompt": prompt}
+        session["optimized_prompt"] = opt_data.get("optimized_prompt", "")
+        session["optimized_technique"] = opt_data.get("technique", "")
+        yield sse("optimized_prompt", opt_data)
+
+        # CALL 4: Right (optimized prompt)
+        yield sse("status", {"phase": "right"})
+        opt_prompt = opt_data.get("optimized_prompt", prompt)
+        right_content = []
+        for att in attachments:
+            right_content.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": att["type"], "data": att["b64"]}
+            })
+        right_content.append({"type": "text", "text": opt_prompt})
+        right_msgs = [{"role": "user", "content": right_content if attachments else opt_prompt}]
+        right_text, right_tools, right_usage = claude_call_with_tools(model, right_msgs)
+        total_input += right_usage["input_tokens"]
+        total_output += right_usage["output_tokens"]
+        session["right_response"] = right_text
+        session["right_tools_log"] = json.dumps(right_tools)
+        yield sse("right", {"response": right_text, "tools": right_tools})
+
+        # Save to DB
+        session["tokens_input"] = total_input
+        session["tokens_output"] = total_output
+        session["tokens_total"] = total_input + total_output
+        cols = ",".join(session.keys())
+        placeholders = ",".join(["?"] * len(session))
+        with sqlite3.connect(DB) as con:
+            cur = con.execute(
+                f"INSERT INTO sessions ({cols}) VALUES ({placeholders})",
+                list(session.values())
+            )
+            session_id = cur.lastrowid
+
+        yield sse("done", {
+            "session_id": session_id,
+            "tokens_input": total_input,
+            "tokens_output": total_output,
+            "tokens_total": total_input + total_output
+        })
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
+
+
+@app.post("/sessions/{session_id}/preference")
+async def save_preference(session_id: int, request: Request):
+    body = await request.json()
+    with sqlite3.connect(DB) as con:
+        con.execute("UPDATE sessions SET preference=? WHERE id=?", (body["preference"], session_id))
+    return {"ok": True}
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return Path(__file__).parent.joinpath("index.html").read_text()
