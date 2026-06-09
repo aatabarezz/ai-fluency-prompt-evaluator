@@ -29,6 +29,68 @@ def init_db():
 
 init_db()
 
+TOOLS = [
+    {
+        "name": "python_exec",
+        "description": "Execute Python code and return stdout/stderr. Use for math, data analysis, scientific computation.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"code": {"type": "string", "description": "Python code to execute"}},
+            "required": ["code"]
+        }
+    },
+    {
+        "name": "web_search",
+        "description": "Search the web for current information. Returns top result snippets.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string", "description": "Search query"}},
+            "required": ["query"]
+        }
+    }
+]
+
+MODELS = ["claude-sonnet-4-6", "claude-opus-4-8", "claude-haiku-4-5-20251001"]
+
+
+def run_python(code: str) -> str:
+    try:
+        result = subprocess.run(
+            ["python3", "-c", code],
+            capture_output=True, text=True, timeout=10,
+        )
+        out = result.stdout[-3000:] if result.stdout else ""
+        err = result.stderr[-1000:] if result.stderr else ""
+        return (out + ("\nSTDERR: " + err if err else "")).strip() or "(no output)"
+    except subprocess.TimeoutExpired:
+        return "Error: execution timed out (10s limit)"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def web_search(query: str) -> str:
+    try:
+        r = httpx.get("https://api.duckduckgo.com/", params={"q": query, "format": "json", "no_redirect": "1"}, timeout=8)
+        data = r.json()
+        results = []
+        if data.get("AbstractText"):
+            results.append(data["AbstractText"])
+        for topic in data.get("RelatedTopics", [])[:4]:
+            if isinstance(topic, dict) and topic.get("Text"):
+                results.append(topic["Text"])
+        return "\n\n".join(results) if results else "No results found."
+    except Exception as e:
+        return f"Search error: {e}"
+
+
+def dispatch_tool(name: str, inputs: dict) -> str:
+    if name == "python_exec":
+        return run_python(inputs["code"])
+    elif name == "web_search":
+        return web_search(inputs["query"])
+    return "Unknown tool"
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return Path(__file__).parent.joinpath("index.html").read_text()
