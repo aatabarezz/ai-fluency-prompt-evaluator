@@ -18,7 +18,7 @@ This tool is the result. It's built on the **AI Fluency Framework** — the idea
 
 ### Step 1 — Paste your prompt, choose a model
 
-![Header and input](docs/screenshots/01-header.png)
+![Header and input](docs/screenshots/01-header.jpg)
 
 Pick Claude Haiku (fast, cheap), Sonnet (balanced), or Opus (most capable). Hit Evaluate.
 
@@ -26,7 +26,7 @@ Pick Claude Haiku (fast, cheap), Sonnet (balanced), or Opus (most capable). Hit 
 
 ### Step 2 — Get scored, rewritten, and compared
 
-![Evaluation result](docs/screenshots/02-evaluation-result.png)
+![Evaluation result](docs/screenshots/02-evaluation-result.jpg)
 
 Five things happen in parallel:
 
@@ -44,7 +44,7 @@ Everything streams in real time via SSE.
 
 ### Step 3 — Track your sessions in the Archive
 
-![Archive](docs/screenshots/03-archive.png)
+![Archive](docs/screenshots/03-archive.jpg)
 
 Every evaluation is saved to a local SQLite database. The archive shows:
 - Your original score vs. the optimized score
@@ -58,7 +58,7 @@ Export any selection to Excel for reporting or analysis.
 
 ### Step 4 — Learn the framework
 
-![How It Works](docs/screenshots/04-how-it-works.png)
+![How It Works](docs/screenshots/04-how-it-works.jpg)
 
 The **How It Works** tab explains:
 - The 1–10 scoring rubric with color-coded examples at each level
