@@ -114,11 +114,13 @@ def get_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=key)
 
 
-def claude_call_with_tools(model: str, messages: list, system: str = "") -> tuple[str, list, dict]:
+def claude_call_with_tools(model: str, messages: list, system: str = "", use_tools: bool = True) -> tuple[str, list, dict]:
     """Returns (full_text, tools_log, usage_totals)"""
     tools_log = []
     usage = {"input_tokens": 0, "output_tokens": 0}
-    kwargs = {"model": model, "max_tokens": 4096, "messages": messages, "tools": TOOLS}
+    kwargs = {"model": model, "max_tokens": 4096, "messages": messages}
+    if use_tools:
+        kwargs["tools"] = TOOLS
     if system:
         kwargs["system"] = system
 
@@ -179,12 +181,23 @@ async def evaluate(request: Request):
             # CALL 1: Score
             yield sse("status", {"phase": "scoring"})
             score_system = textwrap.dedent("""
-                You are an expert prompt engineer. Evaluate the user's prompt and return ONLY valid JSON:
-                {"score": <1-10>, "good": "<what works>", "bad": "<what doesn't>", "fix": "<how to improve>"}
-                No markdown, no explanation outside the JSON.
+                You are an expert prompt engineer. Evaluate the prompt the user gives you.
+
+                Score it 1-10 based on these criteria:
+                - Clarity: is the goal unambiguous?
+                - Context: does it provide enough background?
+                - Specificity: scope, format, constraints, audience defined?
+                - Technique: does it use good prompting practices?
+
+                Scoring guide: 1-3 = vague single sentence; 4-6 = clear goal but missing context/constraints; 7-9 = specific, contextual, well-structured; 10 = exemplary with all best practices applied.
+
+                Return ONLY this exact JSON (no markdown, no text outside):
+                {"score": <integer 1-10>, "good": "<1-2 sentences on what the prompt does well>", "bad": "<1-2 sentences on the specific weaknesses>", "fix": "<1-2 concrete sentences on exactly how to improve it>"}
+
+                Be direct and specific. "good", "bad", and "fix" must each contain real actionable sentences, never empty strings.
             """).strip()
             score_text, _, score_usage = claude_call_with_tools(
-                model, [{"role": "user", "content": prompt}], system=score_system
+                model, [{"role": "user", "content": prompt}], system=score_system, use_tools=False
             )
             total_input += score_usage["input_tokens"]
             total_output += score_usage["output_tokens"]
@@ -221,15 +234,31 @@ async def evaluate(request: Request):
             # CALL 3: Optimize prompt
             yield sse("status", {"phase": "optimizing"})
             opt_system = textwrap.dedent("""
-                You are an expert prompt engineer. Analyze the given prompt and rewrite it using the most
-                impactful technique(s) from: Zero-shot, Few-shot, Chain-of-Thought, Role, Output Constraints,
-                Step Decomposition, Generate Knowledge, Directional Stimulus.
-                Return ONLY valid JSON:
-                {"technique": "<technique name(s)>", "optimized_prompt": "<full rewritten prompt>"}
-                No markdown, no explanation outside the JSON.
+                You are an expert prompt engineer. Your job is to substantially rewrite and enrich the user's prompt using the most impactful combination of these 6 techniques:
+
+                1. PROVIDE CONTEXT — Add scope, geography, audience, timeframe, or background the AI needs. Bad: "Tell me about climate change." Good: "Explain three major impacts of climate change on agriculture in tropical regions, with examples from the past decade."
+
+                2. SHOW EXAMPLES — Add 1-2 concrete before/after examples so the model understands the desired pattern, style, or format.
+
+                3. SPECIFY OUTPUT CONSTRAINTS — Define format, length, sections, tone, style. Bad: "Design a portfolio website." Good: "Create a single-page portfolio with sections: Hero, About, Skills, Projects, Contact. Sticky nav, responsive, dark/light toggle."
+
+                4. BREAK INTO STEPS — If the task is complex, number the sub-tasks explicitly so the model reasons through each one.
+
+                5. ASK IT TO THINK FIRST — Prepend: "Before answering, think through the key factors, constraints, and approaches, then give your answer."
+
+                6. DEFINE THE ROLE — Specify who the AI should be: "You are an experienced [expert] speaking to [audience]."
+
+                Rules:
+                - The optimized prompt must be SUBSTANTIALLY different from the original — add real content, structure, and specificity.
+                - Do NOT just rephrase. Add context, constraints, role, and/or examples that were missing.
+                - Choose the 2-3 techniques that will most improve THIS specific prompt.
+                - The optimized_prompt field must be the full ready-to-use rewritten prompt.
+
+                Return ONLY this exact JSON (no markdown, no text outside):
+                {"technique": "<names of techniques applied, comma-separated>", "optimized_prompt": "<full substantially improved prompt>"}
             """).strip()
             opt_text, _, opt_usage = claude_call_with_tools(
-                model, [{"role": "user", "content": prompt}], system=opt_system
+                model, [{"role": "user", "content": prompt}], system=opt_system, use_tools=False
             )
             total_input += opt_usage["input_tokens"]
             total_output += opt_usage["output_tokens"]
