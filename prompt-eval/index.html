@@ -53,38 +53,51 @@ body {
 /* ── Site header ───────────────────────────────────────────────── */
 .site-header {
   text-align: center;
-  padding: 48px 24px 32px;
+  padding: 52px 24px 12px;
   user-select: none;
 }
 
 .site-header-inner {
   display: inline-flex;
   align-items: center;
-  gap: 14px;
+  gap: 20px;
+  justify-content: center;
 }
 
-.asterisk {
-  font-size: 32px;
-  color: var(--coral);
-  line-height: 1;
-  animation: spin-in .6s cubic-bezier(.34,1.56,.64,1) both;
+/* ── Animated Claude logo ───────────────────────────────────────── */
+.claude-logo {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  animation: logo-entrance .7s cubic-bezier(.34,1.56,.64,1) both,
+             logo-wiggle 3s ease-in-out 1s infinite;
+  transform-origin: center;
 }
 
-@keyframes spin-in {
-  from { transform: rotate(-90deg) scale(.4); opacity: 0; }
+@keyframes logo-entrance {
+  from { transform: rotate(-90deg) scale(.3); opacity: 0; }
   to   { transform: rotate(0deg) scale(1); opacity: 1; }
+}
+
+@keyframes logo-wiggle {
+  0%,100% { transform: rotate(0deg) scale(1); }
+  15%     { transform: rotate(-12deg) scale(1.08); }
+  30%     { transform: rotate(10deg) scale(1.05); }
+  45%     { transform: rotate(-7deg) scale(1.03); }
+  60%     { transform: rotate(5deg) scale(1.01); }
+  75%     { transform: rotate(-3deg) scale(1); }
 }
 
 .site-title {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0;
+  gap: 2px;
 }
 
 .site-title-top {
   font-family: var(--font-display);
-  font-size: 13px;
+  font-size: 16px;
   font-style: italic;
   color: var(--coral);
   letter-spacing: .04em;
@@ -93,11 +106,27 @@ body {
 
 .site-title-main {
   font-family: var(--font-display);
-  font-size: 28px;
+  font-size: 42px;
   font-weight: 400;
   color: var(--ink);
-  letter-spacing: -.01em;
-  line-height: 1.1;
+  letter-spacing: -.02em;
+  line-height: 1;
+}
+
+/* ── Header tagline ─────────────────────────────────────────────── */
+.site-tagline {
+  margin: 18px auto 0;
+  max-width: 560px;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--ink-muted);
+  text-align: center;
+  padding: 0 16px;
+}
+
+.site-tagline strong {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 /* ── Layout ────────────────────────────────────────────────────── */
@@ -573,6 +602,73 @@ select#model:focus { border-color: var(--coral); }
 #token-footer strong { color: var(--ink-soft); font-weight: 600; }
 #token-footer .tok-divider { color: var(--cream-deeper); }
 
+/* ── Guide tab ─────────────────────────────────────────────────── */
+.guide-wrap { max-width: 860px; margin: 0 auto; padding: 48px 0 80px; }
+
+.guide-hero { text-align: center; margin-bottom: 64px; }
+.guide-h1 {
+  font-family: var(--font-display);
+  font-size: 38px; font-weight: 400;
+  color: var(--ink); letter-spacing: -.02em; margin: 0 0 16px;
+}
+.guide-lead {
+  font-size: 16px; line-height: 1.7; color: var(--ink-muted);
+  max-width: 620px; margin: 0 auto;
+}
+.guide-section { margin-bottom: 60px; }
+.guide-section-label {
+  font-size: 11px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--coral); margin-bottom: 8px;
+}
+.guide-h2 {
+  font-family: var(--font-display);
+  font-size: 26px; font-weight: 400; color: var(--ink);
+  letter-spacing: -.01em; margin: 0 0 12px;
+}
+.guide-body { font-size: 14.5px; line-height: 1.7; color: var(--ink-muted); margin: 0 0 28px; }
+
+/* Score grid */
+.guide-score-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
+.guide-score-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 20px 18px; display: flex; flex-direction: column; gap: 6px;
+}
+.guide-score-card p { font-size: 13px; line-height: 1.6; color: var(--ink-muted); margin: 0; }
+.guide-score-num { font-family: var(--font-display); font-size: 32px; line-height: 1; font-weight: 400; }
+.guide-score-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--ink); margin-bottom: 4px; }
+.guide-example {
+  font-size: 12px; line-height: 1.55; font-style: italic;
+  padding: 10px 12px; border-radius: 8px; margin-top: 8px;
+}
+.bad-example  { background: #fef2f0; color: #c0523a; border-left: 3px solid var(--red); }
+.mid-example  { background: #fffbf0; color: #92700a; border-left: 3px solid var(--amber); }
+.good-example { background: #f0faf5; color: #2d7a50; border-left: 3px solid var(--green); }
+.best-example { background: #fdf3ef; color: #a0503a; border-left: 3px solid var(--coral); }
+
+/* Technique list */
+.guide-technique-list { display: flex; flex-direction: column; gap: 20px; }
+.guide-technique {
+  display: flex; gap: 20px; align-items: flex-start;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px 22px;
+}
+.guide-technique-num {
+  font-family: var(--font-display); font-size: 28px; color: var(--coral);
+  line-height: 1; flex-shrink: 0; width: 32px; text-align: center;
+}
+.guide-technique strong { font-size: 14px; font-weight: 700; color: var(--ink); display: block; margin-bottom: 6px; }
+.guide-technique p { font-size: 13.5px; line-height: 1.65; color: var(--ink-muted); margin: 0; }
+
+/* Stats row */
+.guide-stats-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+.guide-stat {
+  flex: 1; min-width: 160px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 24px 20px; text-align: center;
+}
+.guide-stat-num { font-family: var(--font-display); font-size: 36px; color: var(--coral); line-height: 1; margin-bottom: 8px; }
+.guide-stat-label { font-size: 13px; color: var(--ink-muted); line-height: 1.5; }
+
 /* ── Archive tab ───────────────────────────────────────────────── */
 .archive-toolbar {
   display: flex;
@@ -872,12 +968,30 @@ select#model:focus { border-color: var(--coral); }
 
 <header class="site-header">
   <div class="site-header-inner">
-    <span class="asterisk">✳</span>
+    <!-- Animated Claude asterisk logo -->
+    <svg class="claude-logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <g fill="#d4755a">
+        <!-- 8-petal asterisk matching Claude's brand mark -->
+        <rect x="46" y="8"  width="8" height="36" rx="4"/>
+        <rect x="46" y="56" width="8" height="36" rx="4"/>
+        <rect x="8"  y="46" width="36" height="8" rx="4"/>
+        <rect x="56" y="46" width="36" height="8" rx="4"/>
+        <rect x="20.1" y="14.4" width="8" height="36" rx="4" transform="rotate(45 24.1 32.4)"/>
+        <rect x="55.8" y="50.1" width="8" height="36" rx="4" transform="rotate(45 59.8 68.1)"/>
+        <rect x="14.4" y="55.8" width="36" height="8" rx="4" transform="rotate(45 32.4 59.8)"/>
+        <rect x="50.1" y="20.1" width="36" height="8" rx="4" transform="rotate(45 68.1 24.1)"/>
+      </g>
+    </svg>
     <div class="site-title">
       <span class="site-title-top">AI Fluency</span>
       <span class="site-title-main">Prompt Evaluator</span>
     </div>
   </div>
+  <p class="site-tagline">
+    <strong>The quality of your AI output is only as good as your prompt.</strong>
+    Paste any prompt, get an instant score, see a side-by-side comparison with an expert-rewritten version,
+    and learn exactly which techniques close the gap — so every conversation with AI works harder for you.
+  </p>
   <div id="key-badge" class="key-badge" title="Click to remove API key">
     <span class="key-dot"></span>
     <span id="key-masked"></span>
@@ -888,6 +1002,7 @@ select#model:focus { border-color: var(--coral); }
 <div id="app">
   <nav>
     <button class="tab active" data-tab="evaluate">Evaluate</button>
+    <button class="tab" data-tab="guide">How It Works</button>
     <button class="tab" data-tab="archive">Archive</button>
   </nav>
 
@@ -963,6 +1078,123 @@ select#model:focus { border-color: var(--coral); }
 
     <div id="token-footer"></div>
 
+  </div>
+
+  <!-- GUIDE TAB -->
+  <div id="guide" class="panel">
+    <div class="guide-wrap">
+
+      <section class="guide-hero">
+        <h1 class="guide-h1">Write prompts that actually work.</h1>
+        <p class="guide-lead">Most people use AI like a search engine — terse, vague, hopeful. This tool shows you the gap between what you typed and what you <em>should</em> have typed, with a concrete score and a rewritten example every time.</p>
+      </section>
+
+      <!-- HOW WE SCORE -->
+      <section class="guide-section">
+        <div class="guide-section-label">01 — Scoring</div>
+        <h2 class="guide-h2">How we score your prompt</h2>
+        <p class="guide-body">Every prompt is evaluated on four axes by Claude. The result is a 1–10 score with three plain-English verdicts: what works, what doesn't, and how to fix it.</p>
+        <div class="guide-score-grid">
+          <div class="guide-score-card">
+            <div class="guide-score-num" style="color:var(--red)">1–3</div>
+            <div class="guide-score-label">Vague</div>
+            <p>A single sentence with no context. The model must guess at your intent, audience, format, and scope. Results are generic.</p>
+            <div class="guide-example bad-example">"Explain climate change."</div>
+          </div>
+          <div class="guide-score-card">
+            <div class="guide-score-num" style="color:var(--amber)">4–6</div>
+            <div class="guide-score-label">Developing</div>
+            <p>Clear goal but missing key constraints. You know what you want but haven't told the model who it's for, in what format, or to what depth.</p>
+            <div class="guide-example mid-example">"Explain climate change for a school report."</div>
+          </div>
+          <div class="guide-score-card">
+            <div class="guide-score-num" style="color:var(--green)">7–9</div>
+            <div class="guide-score-label">Strong</div>
+            <p>Specific, contextual, well-structured. Role, audience, format, and scope are all defined. The model can focus on quality, not interpretation.</p>
+            <div class="guide-example good-example">"You are a science teacher. Explain three causes of climate change to 14-year-olds in 3 short paragraphs with one real-world example each."</div>
+          </div>
+          <div class="guide-score-card">
+            <div class="guide-score-num" style="color:var(--coral)">10</div>
+            <div class="guide-score-label">Exemplary</div>
+            <p>Every best practice applied: role, audience, format, constraints, reasoning chain, and examples. Leaves nothing to chance.</p>
+            <div class="guide-example best-example">"You are an environmental educator speaking to high-school students (ages 15–17). Explain the three primary drivers of climate change (CO₂, deforestation, methane). Structure: one heading per driver, 2–3 sentences, one tangible local example. Avoid jargon. Aim for 200 words total."</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- WHAT IDEAL LOOKS LIKE -->
+      <section class="guide-section">
+        <div class="guide-section-label">02 — Anatomy</div>
+        <h2 class="guide-h2">What an ideal prompt looks like</h2>
+        <p class="guide-body">Six ingredients — mix and match the ones relevant to your task. You don't need all six every time, but each one you add narrows the gap between what you mean and what you get.</p>
+        <div class="guide-technique-list">
+          <div class="guide-technique">
+            <div class="guide-technique-num">1</div>
+            <div>
+              <strong>Define a role</strong>
+              <p>"You are a senior software engineer reviewing code for a junior developer."<br>Gives the model a persona, expertise level, and tone in one sentence.</p>
+            </div>
+          </div>
+          <div class="guide-technique">
+            <div class="guide-technique-num">2</div>
+            <div>
+              <strong>Provide context</strong>
+              <p>Who is the audience? What's the background situation? What do they already know? What should the output be used for?</p>
+            </div>
+          </div>
+          <div class="guide-technique">
+            <div class="guide-technique-num">3</div>
+            <div>
+              <strong>Specify output constraints</strong>
+              <p>Format (bullet list, JSON, email), length (under 200 words), tone (formal, casual), sections (Intro → Steps → Summary).</p>
+            </div>
+          </div>
+          <div class="guide-technique">
+            <div class="guide-technique-num">4</div>
+            <div>
+              <strong>Show an example</strong>
+              <p>"Here's a sample of the style I want: [example]." One concrete before/after removes more ambiguity than a paragraph of instructions.</p>
+            </div>
+          </div>
+          <div class="guide-technique">
+            <div class="guide-technique-num">5</div>
+            <div>
+              <strong>Break into steps</strong>
+              <p>For complex tasks, number the sub-tasks explicitly. "Step 1: … Step 2: … Step 3: …" forces structured reasoning instead of a stream-of-consciousness response.</p>
+            </div>
+          </div>
+          <div class="guide-technique">
+            <div class="guide-technique-num">6</div>
+            <div>
+              <strong>Ask it to think first</strong>
+              <p>Prepend: "Before answering, think through the key factors and tradeoffs." This one phrase measurably improves accuracy on reasoning-heavy tasks.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- WHY IT MATTERS -->
+      <section class="guide-section guide-why">
+        <div class="guide-section-label">03 — Why it matters</div>
+        <h2 class="guide-h2">AI fluency is the new leverage</h2>
+        <div class="guide-stats-row">
+          <div class="guide-stat">
+            <div class="guide-stat-num">3–5×</div>
+            <div class="guide-stat-label">more useful output from a well-crafted prompt vs a vague one</div>
+          </div>
+          <div class="guide-stat">
+            <div class="guide-stat-num">6</div>
+            <div class="guide-stat-label">prompt engineering techniques that cover 90% of improvement cases</div>
+          </div>
+          <div class="guide-stat">
+            <div class="guide-stat-num">&lt;5min</div>
+            <div class="guide-stat-label">to internalize the feedback loop and start writing better prompts instinctively</div>
+          </div>
+        </div>
+        <p class="guide-body" style="margin-top:24px">Every session is archived so you can track your score trend over time. The goal isn't a perfect 10 — it's building the instinct to ask yourself <em>"what context am I leaving out?"</em> before you hit send.</p>
+      </section>
+
+    </div>
   </div>
 
   <!-- ARCHIVE TAB -->
