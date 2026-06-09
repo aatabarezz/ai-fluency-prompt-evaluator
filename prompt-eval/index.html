@@ -192,7 +192,7 @@ const filePreview = document.getElementById('file-preview');
 let attachedFiles = [];
 
 // All models support multimodal — show attach button always after page load
-attachBtn.style.display = '';
+attachBtn.style.display = 'inline-block';
 
 attachBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', async () => {
